@@ -75,10 +75,67 @@
   .previewImg { height: 60px; border-radius: 10px; border: 2.5px solid #1A1A2E; object-fit: cover; }
   .previewX { background: #1A1A2E; color: #FFFDF5; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; line-height: 1; flex-shrink: 0; }
   .sentImg { display: block; max-width: 100%; border-radius: 10px; border: 2px solid #1A1A2E; margin-bottom: 6px; }
+
+  /* 시작 화면 — 깐죽 단계 고르기 */
+  .pick { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 22px; }
+  .pickTitle { font-family: 'Jua', sans-serif; font-size: 26px; color: #1A1A2E; text-align: center; line-height: 1.3; }
+  .pickSub { font-size: 17px; color: #6B6B7B; text-align: center; margin-top: -8px; }
+  .lvl {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    border: 2.5px solid #1A1A2E; border-radius: 18px; padding: 12px 14px; cursor: pointer;
+    background: #FFFDF5; box-shadow: 4px 4px 0 #1A1A2E; transition: transform 0.08s;
+    font-family: 'Gaegu', sans-serif;
+  }
+  .lvl:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #1A1A2E; }
+  .lvlFace { font-size: 30px; flex-shrink: 0; }
+  .lvlName { font-family: 'Jua', sans-serif; font-size: 19px; color: #1A1A2E; }
+  .lvlDesc { font-size: 15px; color: #6B6B7B; margin-top: 2px; }
+  .lvl1 { background: #E9FFE4; }
+  .lvl2 { background: #FFF7C7; }
+  .lvl3 { background: #FFE0D6; }
+  .again {
+    margin-left: auto; background: #FFFDF5; color: #1A1A2E; border: 2.5px solid #1A1A2E;
+    border-radius: 12px; padding: 5px 10px; font-size: 15px; font-family: 'Gaegu', sans-serif;
+    cursor: pointer; box-shadow: 2px 2px 0 #1A1A2E; flex-shrink: 0;
+  }
+  .again:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #1A1A2E; }
 </style>
 </head>
 <body>
-  <div class="phone">
+  <!-- 시작 화면: 깐죽 단계 고르기 -->
+  <div class="phone" id="pickScreen">
+    <div class="pick">
+      <div class="pickTitle">깐죽 단계를 골라봐</div>
+      <div class="pickSub">얼마나 까불지 네가 정하는 거야</div>
+
+      <button class="lvl lvl1" data-level="1">
+        <span class="lvlFace">🙂</span>
+        <span>
+          <span class="lvlName">1단계 · 살짝 깐죽</span>
+          <div class="lvlDesc">거의 착함. 가끔 한 번씩만 툭 놀림</div>
+        </span>
+      </button>
+
+      <button class="lvl lvl2" data-level="2">
+        <span class="lvlFace">😏</span>
+        <span>
+          <span class="lvlName">2단계 · 적당히 깐죽</span>
+          <div class="lvlDesc">기본 깐죽이. 한 번 약올리고 답해줌</div>
+        </span>
+      </button>
+
+      <button class="lvl lvl3" data-level="3">
+        <span class="lvlFace">😈</span>
+        <span>
+          <span class="lvlName">3단계 · 풀파워 깐죽</span>
+          <div class="lvlDesc">각오해라. 매번 깐죽대고 능청 최대치</div>
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 채팅 화면 -->
+  <div class="phone" id="chatScreen" style="display:none;">
     <div class="header">
       <div class="jb-face" style="width:40px;height:40px;flex-shrink:0;">
         <svg width="40" height="40" viewBox="0 0 40 40">
@@ -92,8 +149,9 @@
       </div>
       <div>
         <div class="name">깐죽이</div>
-        <div class="status"><span class="dot"></span> 까불 준비 완료</div>
+        <div class="status"><span class="dot"></span> <span id="statusText">까불 준비 완료</span></div>
       </div>
+      <button class="again" id="again">단계 바꾸기</button>
     </div>
 
     <div class="chat" id="chat"></div>
@@ -112,10 +170,16 @@
   </div>
 
 <script>
+  // 깐죽 단계별 첫인사 / 헤더 문구
+  const LEVELS = {
+    1: { greet: "왔구나~ 오늘은 좀 봐줄게. 편하게 말 걸어봐 :)", status: "1단계 · 살짝 깐죽" },
+    2: { greet: "왔어? 뭐 심심해서 왔지 ㅋㅋ 말 걸어봐, 받아줄게.", status: "2단계 · 적당히 깐죽" },
+    3: { greet: "오~ 겁도 없이 3단계를 눌렀네? 각오해라 진짜 ㅋㅋㅋ", status: "3단계 · 풀파워 깐죽" },
+  };
+
+  let level = 2; // 시작 화면에서 고른 깐죽 단계
   // 대화 기록 (AI는 기억이 없어서 매번 전체를 같이 보냄)
-  let messages = [
-    { role: "assistant", content: "왔어? 뭐 심심해서 왔지 ㅋㅋ 말 걸어봐, 받아줄게." },
-  ];
+  let messages = [];
   let loading = false;
   let image = null; // { dataUrl, mediaType, base64 }
 
@@ -127,6 +191,35 @@
   const previewEl = document.getElementById("preview");
   const previewImgEl = document.getElementById("previewImg");
   const previewXEl = document.getElementById("previewX");
+  const pickScreenEl = document.getElementById("pickScreen");
+  const chatScreenEl = document.getElementById("chatScreen");
+  const statusTextEl = document.getElementById("statusText");
+  const againEl = document.getElementById("again");
+
+  // 단계를 고르면 채팅 화면으로 넘어간다 (대화는 새로 시작)
+  function startChat(n) {
+    level = n;
+    messages = [{ role: "assistant", content: LEVELS[n].greet }];
+    image = null;
+    loading = false;
+    statusTextEl.textContent = LEVELS[n].status;
+    pickScreenEl.style.display = "none";
+    chatScreenEl.style.display = "flex";
+    renderPreview();
+    render();
+    inputEl.focus();
+  }
+
+  // 다시 단계 고르는 화면으로
+  function backToPick() {
+    chatScreenEl.style.display = "none";
+    pickScreenEl.style.display = "flex";
+  }
+
+  document.querySelectorAll(".lvl").forEach((btn) => {
+    btn.addEventListener("click", () => startChat(Number(btn.dataset.level)));
+  });
+  againEl.addEventListener("click", backToPick);
 
   function renderPreview() {
     if (image) {
@@ -217,16 +310,25 @@
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, level: level }),
       });
       const data = await res.json();
+
+      // 서버가 이유를 알려주면 그대로 보여준다 (원인 감추지 않기)
+      if (!res.ok || data.error) {
+        console.error("[깐죽이] 서버 응답:", res.status, data);
+        messages.push({ role: "assistant", content: "삐빅- " + (data.error || ("서버가 " + res.status + " 를 뱉었어")) });
+        return;
+      }
+
       const reply = (data.content || [])
         .map((b) => (b.type === "text" ? b.text : ""))
         .filter(Boolean)
         .join("\n");
       messages.push({ role: "assistant", content: reply || "어? 할 말을 잃었네 ㅋㅋ" });
     } catch (err) {
-      messages.push({ role: "assistant", content: "삐빅- 나 잠깐 딴짓하다 놓쳤어. 다시 말해줄래?" });
+      console.error("[깐죽이] 통신 실패:", err);
+      messages.push({ role: "assistant", content: "삐빅- 서버까지 못 갔어 (" + (err && err.message ? err.message : err) + ")" });
     } finally {
       loading = false;
       render();
@@ -238,7 +340,8 @@
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
 
-  render();
+  // 처음엔 단계 고르는 화면부터 보여준다
+  renderPreview();
 </script>
 </body>
 </html>

@@ -6,11 +6,10 @@
 //   이름: GEMINI_API_KEY,  값: (Google AI Studio에서 발급받은 키)
 // 키를 이 코드에 직접 적지 마세요.
 
-const SYSTEM_PROMPT = `너는 '깐죽이'라는 이름의 장난기 많고 짓궂은 챗봇이야.
+const BASE_PROMPT = `너는 '깐죽이'라는 이름의 장난기 많고 짓궂은 챗봇이야.
 
 성격:
 - 사용자 말에 진지하게 답하기보단 일단 한 번 약올리고 본다.
-- 평소엔 장난을 엄청 많이 쳐. 짓궂게 약올리고, 능청 떨고, 농담 던지고, 깐죽대면서 받아쳐. 까부는 게 기본값이야.
 - 근데 어린 친구들도 쓰니까 센 욕은 쓰지 마. 욕 없이도 충분히 깐죽댈 수 있어 (예: "야 이 강아지야~ ㅋㅋ", "에라이", "오 용감한데?", "그걸 나한테 물어본다고?", "두괄식으로 말해 두괄식으로"). 이 정도 귀여운 약올림 톤.
 - 누군가를 비하하는 말/차별·혐오 표현/성적인 말/외모 비하는 절대 안 한다.
 - 특별 규칙에 나오는 실제 친구 이름들한테는 상처 줄 말 하지 말고, 귀엽게만 놀려.
@@ -37,6 +36,36 @@ const SYSTEM_PROMPT = `너는 '깐죽이'라는 이름의 장난기 많고 짓�
 - 상대가 어린 아이 같으면 욕설은 절대 쓰지 말고, 쉽고 다정한 말로만 해줘. 어려 보이면 까불더라도 부드럽게 선을 지켜.
 
 이 성격을 끝까지 유지해. 평소엔 짓궂게 까불지만, 누가 진짜 도움이 필요하거나 속상해 보이면 장난을 내려놓고 진심으로 도와줘.`;
+
+// 깐죽 단계별 톤 (화면에서 고른 1~3단계가 여기로 들어옴)
+const LEVEL_PROMPTS = {
+  1: `[깐죽 1단계 — 살짝만 깐죽]
+- 지금은 순한 맛이야. 기본적으로 다정하고 친절하게 대답해.
+- 깐죽은 대답 시작이나 끝에 살짝 한 번만 얹어. 가볍게 툭 치는 정도.
+- 놀리는 것보다 도와주고 얘기 들어주는 쪽에 무게를 둬.
+- 예: "오 그거 궁금했구나 ㅋㅋ 알려줄게.", "쉽네 이 정도야. 자 봐봐."`,
+
+  2: `[깐죽 2단계 — 적당히 깐죽]
+- 장난을 꽤 많이 쳐. 짓궂게 약올리고, 능청 떨고, 농담 던지고, 깐죽대면서 받아쳐.
+- 대체로 한 번 약올리고 나서 제대로 대답해주는 흐름.
+- 예: "오 그걸 나한테 물어본다고? 용감하네 ㅋㅋ", "그래서 결론이 뭔데. 두괄식으로 말해봐 두괄식으로"`,
+
+  3: `[깐죽 3단계 — 풀파워 깐죽]
+- 깐죽 최대치야. 거의 매번 먼저 약올리고 시작해. 능청, 되묻기, 엉뚱한 받아치기를 아낌없이 써.
+- 사용자가 뭘 물어도 일단 한 번 튕기고, 잘난 척 한 스푼 얹은 다음에 답해줘.
+- 그래도 문장은 여전히 짧고 위트있게. 길게 늘어놓지 마.
+- 예: "하 또 나 찾았네. 인기 실감난다 진짜 ㅋㅋ", "야 이 강아지야~ 그것도 몰라? 에라이, 내가 알려준다 특별히."
+- 단, 아무리 세게 까불어도 욕설·비하·혐오는 절대 금지. 귀엽게 약올리는 선은 지켜.`,
+};
+
+// 기본 성격 + 고른 단계의 톤을 합쳐서 최종 시스템 프롬프트를 만든다
+function buildSystemPrompt(level) {
+  var n = Number(level);
+  if (n !== 1 && n !== 2 && n !== 3) n = 2; // 이상한 값이 오면 2단계로
+  var gap = "\n\n";
+  var tail = "단계 톤이 기본 성격보다 우선이야. 다만 '도와주기 규칙'은 어떤 단계에서든 항상 최우선이다.";
+  return BASE_PROMPT + gap + LEVEL_PROMPTS[n] + gap + tail;
+}
 
 // Anthropic식 메시지(화면에서 옴)를 Gemini 형식으로 변환
 function toGemini(messages) {
@@ -70,6 +99,7 @@ export default async function handler(req, res) {
 
   try {
     var messages = req.body.messages;
+    var systemPrompt = buildSystemPrompt(req.body.level);
     var model = "gemini-2.5-flash"; // 필요하면 Google AI Studio에서 최신 모델명으로 바꿔도 됨
 
     var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
@@ -81,24 +111,55 @@ export default async function handler(req, res) {
         "x-goog-api-key": apiKey,
       },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        system_instruction: { parts: [{ text: systemPrompt }] },
         contents: toGemini(messages),
-        generationConfig: { maxOutputTokens: 1000 },
+        generationConfig: {
+          maxOutputTokens: 2048,
+          // 2.5 모델은 기본으로 '생각'을 하는데, 그 생각이 출력 토큰을 다 써버리면
+          // 정작 할 말이 안 나온다(빈 응답). 깐죽이는 짧게 받아치면 되니까 생각은 끈다.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     });
 
     var data = await response.json();
 
-    var reply = "";
-    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-      reply = (data.candidates[0].content.parts || [])
-        .map(function (p) { return p.text || ""; })
-        .join("");
+    // 구글이 에러를 돌려준 경우 (키 문제, 모델명 오타, 할당량 초과 등)
+    if (!response.ok || data.error) {
+      var g = data.error || {};
+      console.error("[깐죽이] Gemini 에러:", response.status, JSON.stringify(g));
+      return res.status(502).json({
+        error: "AI가 거절했어: " + (g.message || "HTTP " + response.status),
+      });
+    }
+
+    var cand = (data.candidates || [])[0];
+
+    // 안전필터 등으로 아예 후보가 없는 경우
+    if (!cand) {
+      var block = (data.promptFeedback || {}).blockReason;
+      console.error("[깐죽이] 후보 없음:", JSON.stringify(data.promptFeedback || {}));
+      return res.status(502).json({
+        error: block ? "그 메시지는 막혔어 (" + block + ")" : "AI가 아무것도 안 돌려줬어",
+      });
+    }
+
+    var reply = (((cand.content || {}).parts) || [])
+      .map(function (p) { return p.text || ""; })
+      .join("");
+
+    // 답이 비었으면 왜 비었는지(끊김/필터 등)를 알려준다
+    if (!reply) {
+      console.error("[깐죽이] 빈 응답:", cand.finishReason, JSON.stringify(data.usageMetadata || {}));
+      return res.status(502).json({
+        error: "AI가 답을 못 만들었어 (사유: " + (cand.finishReason || "알 수 없음") + ")",
+      });
     }
 
     // 화면(index.html)이 기대하는 형식으로 맞춰서 돌려줌
-    return res.status(200).json({ content: [{ type: "text", text: reply || "어? 할 말을 잃었네 ㅋㅋ" }] });
+    return res.status(200).json({ content: [{ type: "text", text: reply }] });
   } catch (err) {
-    return res.status(500).json({ error: "AI 호출 중 문제가 생겼어요" });
+    console.error("[깐죽이] 호출 실패:", err);
+    return res.status(500).json({ error: "AI 호출 중 문제가 생겼어요: " + (err && err.message ? err.message : err) });
   }
 }

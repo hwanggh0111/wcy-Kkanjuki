@@ -54,9 +54,8 @@
     font-variant-numeric: tabular-nums; line-height: 1.05;
   }
   .hp-box { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-  .hp-pips { display: flex; gap: 5px; }
-  .pip { width: 14px; height: 14px; border-radius: 3px; background: var(--coral); transform: rotate(45deg); transition: background .2s, opacity .2s; }
-  .pip.off { background: var(--line); opacity: .6; }
+  .miss-count { font-family: var(--num); font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .miss-count.has { color: var(--danger); }
   .hud-btns { display: flex; gap: 8px; pointer-events: auto; }
   .icon-btn {
     font: 500 12px var(--body); color: var(--lilac); background: rgba(24,27,80,.8);
@@ -110,6 +109,31 @@
   .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; margin-left: 6px; vertical-align: 2px; }
   .tag.easy { background: rgba(82,227,194,.15); color: var(--mint); }
   .tag.hard { background: rgba(255,111,89,.16); color: var(--coral); }
+  .sec-label { font-size: 12px; color: var(--muted); letter-spacing: .06em; margin: 0 0 6px; }
+  .diffs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .diff {
+    font: inherit; color: inherit; cursor: pointer; text-align: center;
+    background: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 10px 6px;
+    display: grid; gap: 2px;
+  }
+  .diff .dn { font-family: var(--display); font-size: 20px; }
+  .diff .dm { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .diff[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+  .diff[aria-pressed="true"][data-d="easy"] { border-color: var(--mint); box-shadow: inset 0 0 0 1px var(--mint); }
+  .diff[aria-pressed="true"][data-d="hard"] { border-color: var(--coral); box-shadow: inset 0 0 0 1px var(--coral); }
+  .diffs.off { opacity: .35; }
+  .boss {
+    width: 100%; text-align: left; cursor: pointer; font: inherit; color: #ffe9e4;
+    border: 1px solid #6e1a1f; border-radius: 12px; padding: 14px 16px;
+    background: linear-gradient(120deg, #2a070b, #4e0d14 60%, #7a1a14);
+    display: grid; gap: 4px;
+  }
+  .boss .nm { font-family: var(--display); font-size: 30px; letter-spacing: .04em; line-height: 1; }
+  .boss .tag { background: #ff3b2f; color: #1a0305; font-weight: 700; }
+  .boss .meta { font-size: 12px; color: #f1a79c; font-variant-numeric: tabular-nums; }
+  .boss .desc { font-size: 13px; color: #ffd0c8; }
+  .boss .best { font-family: var(--num); font-size: 13px; color: #ffb36b; font-variant-numeric: tabular-nums; }
+  .boss[aria-pressed="true"] { border-color: #ff3b2f; box-shadow: 0 0 0 1px #ff3b2f, 0 0 24px rgba(255,59,47,.35); }
   .btn {
     font: 700 16px var(--body); cursor: pointer; border-radius: 10px; padding: 12px 22px;
     border: 1px solid transparent; background: var(--coral); color: #1a0d10;
@@ -121,6 +145,9 @@
     font-family: var(--num); font-size: 12px; color: var(--lilac); background: var(--ink);
     border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px;
   }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
   .board h3 { margin: 0; font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .board .src { font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .05em; }
   .board .src.live { color: var(--mint); }
@@ -172,7 +199,7 @@
           <button class="icon-btn" id="muteBtn" type="button">소리 켜짐</button>
           <button class="icon-btn" id="pauseBtn" type="button">일시정지</button>
         </div>
-        <div class="hp-pips" id="hpPips" aria-label="체력"></div>
+        <div class="miss-count" id="missVal">MISS 0</div>
       </div>
     </div>
     <div class="combo" id="combo" style="opacity:0">
@@ -187,20 +214,34 @@
     <div class="panel">
       <div>
         <h1 class="logo">BEAT<span>DASH</span></h1>
-        <p class="tagline">비트에 맞춰 날아오는 블록을 피하세요. 연속으로 피할수록 콤보 배율이 올라갑니다.</p>
+        <p class="tagline">비트에 맞춰 날아오는 블록을 피하세요. 부딪혀도 게임은 계속되지만 콤보가 끊겨요. 연속으로 피할수록 점수 배율이 올라갑니다.</p>
       </div>
       <div class="row">
         <label class="fld" for="nick">닉네임 (랭킹에 표시돼요)
           <input type="text" id="nick" maxlength="12" placeholder="플레이어" autocomplete="off">
         </label>
       </div>
-      <div class="songs" id="songList"></div>
+      <div>
+        <p class="sec-label">곡 선택</p>
+        <div class="songs" id="songList"></div>
+      </div>
+      <div>
+        <p class="sec-label">난이도</p>
+        <div class="diffs" id="diffList"></div>
+      </div>
+      <div id="bossSlot"></div>
       <div class="row">
         <button class="btn" id="startBtn" type="button">시작하기</button>
         <div class="keys">
           <kbd>←</kbd> <kbd>→</kbd> 이동 · <kbd>↑</kbd>/<kbd>Space</kbd> 점프 · <kbd>Esc</kbd> 일시정지<br>
           모바일: 좌우 스와이프로 이동, 위로 스와이프·탭으로 점프
         </div>
+      </div>
+      <div class="legend">
+        <span><i style="background:#ff6f59"></i>벽: 옆으로 피하기</span>
+        <span><i style="background:#a98bff"></i>2칸 블록: 남은 한 칸으로</span>
+        <span><i style="background:#ffc857"></i>낮은 블록: 점프 또는 옆으로</span>
+        <span><i style="background:#52e3c2"></i>가로 바: 점프만 가능</span>
       </div>
       <div class="board" id="board"></div>
     </div>
@@ -251,18 +292,37 @@
 
   // ───────────────────────── 곡 정의 ─────────────────────────
   // 음악은 Web Audio로 실시간 합성. 채보는 곡마다 고정 시드라 모두 같은 패턴으로 경쟁.
+  const THEME_NEON = { sky: ["#090a24", "#2b1a5c"], ring: "255,111,89", halo: "255,200,87", grid: "82,227,194", road: ["#12154a", "#1d2160"], ground: "#0d0f2e" };
+  const THEME_HELL = { sky: ["#140306", "#5a0c12"], ring: "255,59,47", halo: "255,140,60", grid: "255,96,70", road: ["#240609", "#3a0b10"], ground: "#120407" };
   const SONGS = [
     {
-      id: "neon-run", name: "Neon Run", bpm: 124, diff: "보통", hard: false, approach: 1.9, seed: 1207,
+      id: "neon-run", name: "Neon Run", bpm: 124, approach: 1.9, seed: 1207, theme: THEME_NEON,
       roots: [57, 53, 48, 55], quals: ["m", "M", "M", "M"], // Am F C G
       structure: [["intro", 4], ["verse", 8], ["build", 4], ["chorus", 8], ["verse", 8], ["build", 2], ["chorus", 8], ["outro", 4]],
     },
     {
-      id: "overdrive", name: "Overdrive", bpm: 148, diff: "어려움", hard: true, approach: 1.45, seed: 4481,
+      id: "overdrive", name: "Overdrive", bpm: 148, approach: 1.6, seed: 4481, theme: THEME_NEON,
       roots: [52, 48, 55, 50], quals: ["m", "M", "M", "M"], // Em C G D
       structure: [["intro", 4], ["verse", 8], ["build", 4], ["chorus", 8], ["verse", 4], ["build", 4], ["chorus", 12], ["outro", 4]],
     },
+    {
+      // 끝판왕: 헬 모드 전용 곡
+      id: "inferno", name: "Inferno", bpm: 172, approach: 1.4, seed: 6660, theme: THEME_HELL, boss: true, heavy: true,
+      roots: [50, 46, 48, 45], quals: ["m", "M", "M", "M"], // Dm Bb C A
+      structure: [["intro", 4], ["verse", 8], ["build", 4], ["chorus", 8], ["build", 2], ["chorus", 8], ["verse", 4], ["build", 4], ["chorus", 12], ["outro", 4]],
+    },
   ];
+
+  // 난이도: 블록 밀도, 속도, 체력, 점수 배율
+  // mix = 블록 종류 비율 [wall, low, wide, bar], split = 벽이 양쪽 두 칸을 막을 확률
+  const DIFFS = {
+    easy:   { key: "easy",   name: "쉬움",   speed: 1.3,  pace: "느림", mul: 0.7, comboCap: 3, mix: [0.42, 0.33, 0.13, 0.12], split: 0,    verse: 0.5, chorus: 0.5, off: 0 },
+    normal: { key: "normal", name: "보통",   speed: 1.0,  pace: "보통", mul: 1.0, comboCap: 4, mix: [0.32, 0.26, 0.24, 0.18], split: 0.12, verse: 0.5, chorus: 1,   off: 0 },
+    hard:   { key: "hard",   name: "어려움", speed: 0.85, pace: "빠름", mul: 1.3, comboCap: 4, mix: [0.26, 0.24, 0.30, 0.20], split: 0.25, verse: 1,   chorus: 1,   off: 0.3 },
+    hell:   { key: "hell",   name: "헬",     speed: 0.85, pace: "매우 빠름", mul: 1.8, comboCap: 5, mix: [0.22, 0.24, 0.34, 0.20], split: 0.3,  verse: 1,   chorus: 1,   off: 0.65 },
+  };
+  const DIFF_ORDER = ["easy", "normal", "hard"];
+
   for (const s of SONGS) {
     s.beat = 60 / s.bpm;
     s.bar = s.beat * 4;
@@ -275,8 +335,13 @@
 
   const JUMP_DUR = 0.52;
   const JUMP_CLEAR = 0.3; // 이 높이 이상이면 낮은 블록을 넘음
-  const MAX_HP = 5;
   const BASE = { PERFECT: 300, GREAT: 200, GOOD: 100 };
+  const OBS_COLORS = {
+    wall: ["#ff6f59", "#ffa08f", "#b8412f"],
+    low: ["#ffc857", "#ffe2a0", "#b88a27"],
+    bar: ["#52e3c2", "#a6f5e3", "#2a9e86"],
+    wide: ["#a98bff", "#d6c9ff", "#6a4fc2"],
+  };
   const JUDGE_COLOR = { PERFECT: "#ffc857", GREAT: "#52e3c2", GOOD: "#ece9ff", MISS: "#ff4d6d" };
 
   function mulberry32(a) {
@@ -288,37 +353,58 @@
     };
   }
 
-  function buildChart(song) {
-    const rnd = mulberry32(song.seed);
+  const chartCache = {};
+  function buildChart(song, diff) {
+    const key = song.id + "/" + diff.key;
+    if (chartCache[key]) return chartCache[key];
+    const rnd = mulberry32(song.seed + Object.keys(DIFFS).indexOf(diff.key) * 7919);
     const events = [];
-    let lastType = null;
+    let lastType = null, lastT = -9;
+    const TYPES = ["wall", "low", "wide", "bar"];
+    const pickType = () => {
+      let r = rnd();
+      for (let i = 0; i < 4; i++) { if ((r -= diff.mix[i]) < 0) return TYPES[i]; }
+      return "wall";
+    };
+    const push = (t, type) => {
+      // 가로 바는 연속으로 나오면 점프가 끝나기 전에 또 와서 못 넘으므로 간격 보장
+      if (type === "bar" && lastType === "bar" && t - lastT < JUMP_DUR + 0.08) type = "wide";
+      let lanes;
+      if (type === "bar") lanes = [1, 1, 1];
+      else if (type === "wide") lanes = rnd() < 0.5 ? [1, 1, 0] : [0, 1, 1];
+      else if (type === "wall" && rnd() < diff.split) lanes = [1, 0, 1];
+      else { lanes = [0, 0, 0]; lanes[Math.floor(rnd() * 3)] = 1; }
+      events.push({ t, type, lanes, res: null });
+      lastType = type; lastT = t;
+    };
+
     song.bars.forEach((b, bar) => {
       for (let beat = 0; beat < 4; beat++) {
+        const every2 = beat % 2 === 0;
         let place = false;
-        if (b.sec === "verse") place = beat % 2 === 0 && rnd() < 0.9;
-        else if (b.sec === "build" || b.sec === "chorus") place = true;
-        else if (b.sec === "outro") place = beat % 2 === 0 && b.idx < b.len - 2;
-        if (!place) continue;
-
-        const r = rnd();
-        let type = b.sec === "build" ? (r < 0.45 ? "bar" : "low") : r < 0.5 ? "wall" : r < 0.78 ? "low" : "bar";
-        if (type === "bar" && lastType === "bar") type = "wall";
-
-        let lanes;
-        if (type === "bar") lanes = [1, 1, 1];
-        else if (rnd() < (b.sec === "chorus" ? 0.6 : 0.4)) {
-          lanes = [1, 1, 1];
-          lanes[Math.floor(rnd() * 3)] = 0;
-        } else {
-          lanes = [0, 0, 0];
-          lanes[Math.floor(rnd() * 3)] = 1;
+        if (b.sec === "verse") place = (diff.verse < 1 ? every2 : true) && rnd() < 0.88;
+        else if (b.sec === "chorus") place = diff.chorus < 1 ? every2 : true;
+        else if (b.sec === "build") place = diff.key === "easy" ? every2 : true;
+        else if (b.sec === "outro") place = every2 && b.idx < b.len - 2;
+        const t = (bar * 4 + beat) * song.beat;
+        if (place) {
+          let type = pickType();
+          if (b.sec === "build") type = rnd() < (diff.key === "easy" ? 0.25 : 0.45) ? "bar" : "low";
+          push(t, type);
         }
-        events.push({ t: (bar * 4 + beat) * song.beat, type, lanes, res: null });
-        lastType = type;
+        // 어려움/헬: 엇박(반 박자 뒤) 블록
+        const offOk = b.sec === "chorus" || (diff.key === "hell" && (b.sec === "build" || b.sec === "verse"));
+        if (place && offOk && rnd() < diff.off) {
+          let type = pickType();
+          if (type === "bar" && diff.key !== "hell") type = "low";
+          push(t + song.beat / 2, type);
+        }
       }
     });
+    chartCache[key] = events;
     return events;
   }
+  const cloneChart = (c) => c.map((e) => ({ ...e, res: null }));
 
   // ───────────────────────── 오디오 ─────────────────────────
   let actx = null, master = null, noiseBuf = null, bus = null;
@@ -392,7 +478,12 @@
       const every = idx === len - 1 ? 1 : idx >= len / 2 ? 2 : 4;
       if (st % every === 0) clap(t, 0.25 + 0.6 * ((idx * 16 + st) / (len * 16)));
     }
-    if (sec === "verse" || sec === "chorus") {
+    if (song.heavy && sec === "chorus" && (st === 6 || st === 10 || st === 14)) kick(t, 0.7);
+    if (song.heavy && (sec === "verse" || sec === "chorus")) {
+      // 끝판왕 곡: 16분음 디스토션 베이스
+      const up = st % 8 === 6 ? 12 : st % 8 === 7 ? 7 : 0;
+      tone(t, mtof(root - 12 + up), song.step * 0.9, { type: "square", gain: 0.1, cutoff: sec === "chorus" ? 900 : 600 });
+    } else if (sec === "verse" || sec === "chorus") {
       if (st % 2 === 0) {
         const up = sec === "chorus" && st % 4 === 2 ? 12 : 0;
         tone(t, mtof(root - 12 + up), song.step * 1.8, { gain: 0.17, cutoff: 520 });
@@ -466,10 +557,10 @@
       } catch (e) {}
       uid = (uid || localId()).replace(/[^A-Za-z0-9_\-.~:@+]/g, "_").slice(0, 120);
       Board.db = db; Board.uid = uid; Board.mode = "shared";
-      for (const s of SONGS) {
-        db.collection(`songs/${s.id}/scores`).orderBy("score", "desc").limit(30).onSnapshot(
+      for (const key of allBoardKeys()) {
+        db.collection(`songs/${key}/scores`).orderBy("score", "desc").limit(30).onSnapshot(
           (snap) => {
-            Board.data[s.id] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            Board.data[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
             renderBoards();
           },
           () => { Board.err = "랭킹을 불러오지 못했어요. 새로고침하면 다시 연결돼요."; renderBoards(); }
@@ -496,11 +587,22 @@
     }
   }
 
-  function renderBoardInto(el, songId, highlightScore) {
-    const song = SONGS.find((s) => s.id === songId);
+  // 랭킹은 곡 × 난이도별로 따로
+  const boardKey = (song, diff) => song.id + "-" + diff.key;
+  function allBoardKeys() {
+    const keys = [];
+    for (const s of SONGS) {
+      if (s.boss) keys.push(boardKey(s, DIFFS.hell));
+      else for (const d of DIFF_ORDER) keys.push(boardKey(s, DIFFS[d]));
+    }
+    return keys;
+  }
+
+  function renderBoardInto(el, song, diff, highlightScore) {
+    const songId = boardKey(song, diff);
     el.textContent = "";
     const h = document.createElement("h3");
-    h.append(`랭킹 · ${song.name}`);
+    h.append(`랭킹 · ${song.name} · ${diff.name}`);
     const src = document.createElement("span");
     src.className = "src" + (Board.mode === "shared" ? " live" : "");
     src.textContent = Board.mode === "shared" ? "● 공유 랭킹 (실시간)" : "이 기기 기록";
@@ -524,7 +626,7 @@
       if (isMe) { li.className = "me"; marked = true; }
       const rk = document.createElement("span"); rk.className = "rk"; rk.textContent = String(i + 1).padStart(2, "0");
       const nm = document.createElement("span"); nm.className = "nmx"; nm.textContent = String(e.name || "플레이어").slice(0, 12);
-      const cb = document.createElement("span"); cb.className = "cb"; cb.textContent = `${e.maxCombo || 0}콤보 · ${e.grade || "-"}`;
+      const cb = document.createElement("span"); cb.className = "cb"; cb.textContent = `${e.maxCombo || 0}콤보 · ${e.grade || "-"}${e.miss === 0 ? " · FC" : ""}`;
       const sc = document.createElement("span"); sc.className = "sc"; sc.textContent = (e.score || 0).toLocaleString("ko-KR");
       li.append(rk, nm, cb, sc);
       ol.append(li);
@@ -537,16 +639,24 @@
   const cv = $("cv"), g2 = cv.getContext("2d");
   let W = 0, H = 0, DPR = 1;
   let selected = 0;
-  try { selected = Math.max(0, SONGS.findIndex((s) => s.id === localStorage.getItem("beatdash.song"))); } catch (e) {}
+  let diffKey = "normal";
+  try {
+    selected = Math.max(0, SONGS.findIndex((s) => s.id === localStorage.getItem("beatdash.song")));
+    const d = localStorage.getItem("beatdash.diff");
+    if (DIFF_ORDER.includes(d)) diffKey = d;
+  } catch (e) {}
+  // 끝판왕 곡은 항상 헬 난이도
+  const currentDiff = () => (SONGS[selected].boss ? DIFFS.hell : DIFFS[diffKey]);
   let game = null;
   let lastResultScore = null;
 
-  function newGame(song) {
+  function newGame(song, diff) {
     return {
-      song, chart: buildChart(song), state: "play",
+      song, diff, chart: cloneChart(buildChart(song, diff)), state: "play",
+      approach: song.approach * diff.speed,
       startTime: 0, nextStep: 0, totalSteps: song.bars.length * 16,
       lane: 1, visLane: 1, prevLane: 1, laneChangeAt: -99, jumpStart: -99,
-      hp: MAX_HP, score: 0, combo: 0, maxCombo: 0,
+      score: 0, combo: 0, maxCombo: 0,
       counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
       judgeIdx: 0, popups: [], shake: 0, flash: 0, endAt: null,
     };
@@ -570,11 +680,11 @@
     const song = SONGS[selected];
     if (bus) { try { bus.disconnect(); } catch (e) {} }
     bus = actx.createGain(); bus.connect(master);
-    game = newGame(song);
+    game = newGame(song, currentDiff());
     game.startTime = actx.currentTime + 0.15;
     showScreen(null);
     $("hud").hidden = false;
-    buildPips();
+    resetHud();
     updateHud(true);
   }
 
@@ -622,21 +732,20 @@
     e.res = res;
     game.counts[res]++;
     if (res === "MISS") {
+      // 틀려도 죽지 않음: 콤보만 끊기고 곡은 끝까지 진행
       game.combo = 0;
-      game.hp--;
       game.shake = 1; game.flash = 1;
       sfxHit();
-      if (game.hp <= 0) endGame(false);
     } else {
       game.combo++;
       game.maxCombo = Math.max(game.maxCombo, game.combo);
-      game.score += Math.round(BASE[res] * multiplier(game.combo));
+      game.score += Math.round(BASE[res] * multiplier(game.combo) * game.diff.mul);
       bumpCombo();
     }
     game.popups.push({ text: res, color: JUDGE_COLOR[res], born: performance.now() });
     if (game.popups.length > 6) game.popups.shift();
   }
-  const multiplier = (c) => Math.min(4, 1 + Math.floor(c / 10) * 0.5);
+  const multiplier = (c) => Math.min(game ? game.diff.comboCap : 4, 1 + Math.floor(c / 10) * 0.5);
 
   function update() {
     if (!game || game.state !== "play") return;
@@ -663,7 +772,6 @@
     const total = g.chart.length;
     const pts = g.counts.PERFECT * 3 + g.counts.GREAT * 2 + g.counts.GOOD;
     const acc = total ? pts / (total * 3) : 0;
-    if (!g.cleared) return { grade: "F", acc };
     return { grade: acc >= 0.95 ? "S" : acc >= 0.85 ? "A" : acc >= 0.7 ? "B" : acc >= 0.5 ? "C" : "D", acc };
   }
 
@@ -673,9 +781,10 @@
     const { grade, acc } = gradeOf(game);
     const gEl = $("rGrade");
     gEl.textContent = grade;
-    gEl.classList.toggle("fail", grade === "F");
-    $("rTitle").textContent = game.cleared ? "클리어!" : "실패…";
-    $("rSub").textContent = `${game.song.name} · ${game.song.bpm} BPM · 정확도 ${(acc * 100).toFixed(1)}%`;
+    gEl.classList.toggle("fail", grade === "D");
+    const fc = game.counts.MISS === 0;
+    $("rTitle").textContent = game.song.boss ? (fc ? "끝판왕 완벽 격파!" : "끝판왕 완주!") : fc ? "풀콤보!" : "클리어!";
+    $("rSub").textContent = `${game.song.name} · ${game.diff.name} · ${game.song.bpm} BPM · 정확도 ${(acc * 100).toFixed(1)}%`;
     $("rScore").textContent = game.score.toLocaleString("ko-KR");
     $("rCombo").textContent = game.maxCombo;
     $("rP").textContent = game.counts.PERFECT;
@@ -686,7 +795,7 @@
     $("retryBtn").focus();
 
     const msg = $("rMsg");
-    const songId = game.song.id;
+    const songId = boardKey(game.song, game.diff);
     lastResultScore = game.score;
     if (game.score <= 0) {
       msg.textContent = "점수가 0점이라 기록하지 않았어요.";
@@ -695,8 +804,8 @@
     }
     msg.textContent = "기록을 등록하는 중…";
     const entry = {
-      name: nickname(), score: game.score, maxCombo: game.maxCombo, grade,
-      acc: Math.round(acc * 1000) / 10, cleared: !!game.cleared, at: Date.now(),
+      name: nickname(), score: game.score, maxCombo: game.maxCombo, grade, diff: game.diff.key,
+      acc: Math.round(acc * 1000) / 10, miss: game.counts.MISS, at: Date.now(),
     };
     const r = await submitScore(songId, entry);
     msg.textContent = {
@@ -736,17 +845,15 @@
 
   // ───────────────────────── HUD ─────────────────────────
   let hudCache = {};
-  function buildPips() {
-    const box = $("hpPips"); box.textContent = "";
-    for (let i = 0; i < MAX_HP; i++) { const p = document.createElement("i"); p.className = "pip"; box.append(p); }
-    hudCache = {};
-  }
+  function resetHud() { hudCache = {}; }
   function updateHud(force) {
     if (!game) return;
     if (force || hudCache.score !== game.score) { $("scoreVal").textContent = game.score.toLocaleString("ko-KR"); hudCache.score = game.score; }
-    if (force || hudCache.hp !== game.hp) {
-      [...$("hpPips").children].forEach((p, i) => p.classList.toggle("off", i >= game.hp));
-      hudCache.hp = game.hp;
+    if (force || hudCache.miss !== game.counts.MISS) {
+      const m = $("missVal");
+      m.textContent = "MISS " + game.counts.MISS;
+      m.classList.toggle("has", game.counts.MISS > 0);
+      hudCache.miss = game.counts.MISS;
     }
     if (force || hudCache.combo !== game.combo) {
       $("comboN").textContent = game.combo;
@@ -779,11 +886,12 @@
   function draw(nowMs) {
     const playing = !!game;
     const song = playing ? game.song : SONGS[selected];
+    const th = song.theme;
     const now = playing ? songNow() : nowMs / 1000;
     const beatF = now / song.beat;
     const phase = ((beatF % 1) + 1) % 1;
     const pulse = Math.exp(-phase * 5);
-    const approach = song.approach;
+    const approach = playing ? game.approach : song.approach;
 
     g2.setTransform(DPR, 0, 0, DPR, 0, 0);
     let sx = 0, sy = 0;
@@ -803,11 +911,18 @@
 
     // 하늘
     const sky = g2.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, "#090a24"); sky.addColorStop(1, "#2b1a5c");
+    sky.addColorStop(0, th.sky[0]); sky.addColorStop(1, th.sky[1]);
     g2.fillStyle = sky; g2.fillRect(-20, -20, W + 40, horizon + 20);
     for (const [x, y, b] of stars) {
-      g2.fillStyle = `rgba(236,233,255,${0.25 + b * 0.5})`;
-      g2.fillRect(x * W, y * horizon * 0.9, 1.5, 1.5);
+      if (song.boss) {
+        // 헬: 별 대신 위로 떠오르는 불씨
+        const ey = (y - now * (0.04 + b * 0.05)) % 1;
+        g2.fillStyle = `rgba(${th.halo},${0.3 + b * 0.5})`;
+        g2.fillRect(x * W, (ey < 0 ? ey + 1 : ey) * horizon, 2, 2);
+      } else {
+        g2.fillStyle = `rgba(236,233,255,${0.25 + b * 0.5})`;
+        g2.fillRect(x * W, y * horizon * 0.9, 1.5, 1.5);
+      }
     }
     // 비트에 맞춰 뛰는 링
     const R = Math.min(W, H) * 0.2;
@@ -816,17 +931,17 @@
     for (let i = 3; i >= 0; i--) {
       g2.beginPath();
       g2.arc(cx, horizon, R * (1 + i * 0.28) * (1 + pulse * 0.035 * (4 - i)), 0, Math.PI * 2);
-      g2.strokeStyle = i === 0 ? `rgba(255,111,89,${0.7 + pulse * 0.3})` : `rgba(255,200,87,${0.28 - i * 0.06 + pulse * 0.1})`;
+      g2.strokeStyle = i === 0 ? `rgba(${th.ring},${0.7 + pulse * 0.3})` : `rgba(${th.halo},${0.28 - i * 0.06 + pulse * 0.1})`;
       g2.lineWidth = i === 0 ? 4 : 2;
       g2.stroke();
     }
     const disc = g2.createRadialGradient(cx, horizon, 0, cx, horizon, R);
-    disc.addColorStop(0, "rgba(255,111,89,.35)"); disc.addColorStop(1, "rgba(255,111,89,0)");
+    disc.addColorStop(0, `rgba(${th.ring},.35)`); disc.addColorStop(1, `rgba(${th.ring},0)`);
     g2.fillStyle = disc; g2.fillRect(cx - R, horizon - R, R * 2, R);
     g2.restore();
 
     // 땅
-    g2.fillStyle = "#0d0f2e"; g2.fillRect(-20, horizon, W + 40, H - horizon + 20);
+    g2.fillStyle = th.ground; g2.fillRect(-20, horizon, W + 40, H - horizon + 20);
 
     // 도로
     const far = proj(1), near = proj(-0.06);
@@ -834,7 +949,7 @@
     g2.moveTo(X(-1.5, far.s), far.y); g2.lineTo(X(1.5, far.s), far.y);
     g2.lineTo(X(1.5, near.s), near.y); g2.lineTo(X(-1.5, near.s), near.y); g2.closePath();
     const rg = g2.createLinearGradient(0, horizon, 0, H);
-    rg.addColorStop(0, "#12154a"); rg.addColorStop(1, "#1d2160");
+    rg.addColorStop(0, th.road[0]); rg.addColorStop(1, th.road[1]);
     g2.fillStyle = rg; g2.fill();
 
     // 비트 그리드 (블록은 정확히 이 선 위에서 도착)
@@ -844,14 +959,14 @@
       if (z < -0.06 || z > 1) continue;
       const p = proj(z);
       const strong = ((b % 4) + 4) % 4 === 0;
-      g2.strokeStyle = strong ? `rgba(82,227,194,${0.55 * (1 - z)})` : `rgba(82,227,194,${0.2 * (1 - z)})`;
+      g2.strokeStyle = strong ? `rgba(${th.grid},${0.55 * (1 - z)})` : `rgba(${th.grid},${0.2 * (1 - z)})`;
       g2.lineWidth = (strong ? 2.5 : 1.2) * Math.max(0.4, p.s);
       g2.beginPath(); g2.moveTo(X(-1.5, p.s), p.y); g2.lineTo(X(1.5, p.s), p.y); g2.stroke();
     }
     // 차선과 도로 가장자리
     for (const off of [-1.5, -0.5, 0.5, 1.5]) {
       const edge = Math.abs(off) === 1.5;
-      g2.strokeStyle = edge ? `rgba(82,227,194,${0.6 + pulse * 0.3})` : "rgba(154,158,214,.25)";
+      g2.strokeStyle = edge ? `rgba(${th.grid},${0.6 + pulse * 0.3})` : "rgba(154,158,214,.25)";
       g2.lineWidth = edge ? 2.5 : 1.2;
       g2.beginPath(); g2.moveTo(X(off, far.s), far.y); g2.lineTo(X(off, near.s), near.y); g2.stroke();
     }
@@ -874,13 +989,18 @@
       }
     }
     const drawObs = ([e, z]) => {
-      const cols = { wall: ["#ff6f59", "#ffa08f", "#b8412f"], low: ["#ffc857", "#ffe2a0", "#b88a27"], bar: ["#52e3c2", "#a6f5e3", "#2a9e86"] }[e.type];
+      const cols = OBS_COLORS[e.type];
       const fade = Math.min(1, (1.02 - z) * 6);
-      const hWorld = e.type === "wall" ? 0.95 : e.type === "low" ? 0.34 : 0.28;
+      const hWorld = e.type === "wall" || e.type === "wide" ? 0.95 : e.type === "low" ? 0.34 : 0.28;
       if (e.type === "bar") drawBox(0, 1.44, z, hWorld, cols, fade, e.res === "MISS");
+      else if (e.type === "wide") {
+        // 2칸을 한 번에 막는 큰 블록
+        const off = e.lanes[0] ? -0.5 : 0.5;
+        drawBox(off, 0.89, z, hWorld, cols, fade, e.res === "MISS", true);
+      }
       else e.lanes.forEach((on, l) => { if (on) drawBox(l - 1, 0.39, z, hWorld, cols, fade, e.res === "MISS"); });
     };
-    function drawBox(off, hw, z, hWorld, cols, alpha, hitMark) {
+    function drawBox(off, hw, z, hWorld, cols, alpha, hitMark, stripes) {
       const depth = 0.035;
       const a = proj(z), b = proj(z + depth);
       const lx0 = X(off - hw, a.s), rx0 = X(off + hw, a.s);
@@ -895,6 +1015,18 @@
       g2.fillStyle = hitMark ? "#ff4d6d" : cols[0];
       g2.fillRect(lx0, ty0, rx0 - lx0, a.y - ty0);
       g2.strokeStyle = "rgba(255,255,255,.55)"; g2.lineWidth = 1.5 * Math.max(0.5, a.s);
+      if (stripes) {
+        // 큰 블록 표시용 사선 줄무늬
+        g2.save();
+        g2.beginPath(); g2.rect(lx0, ty0, rx0 - lx0, a.y - ty0); g2.clip();
+        g2.strokeStyle = "rgba(20,10,40,.35)";
+        g2.lineWidth = 7 * a.s;
+        const hgt = a.y - ty0, gap = 22 * a.s;
+        for (let x = lx0 - hgt; x < rx0; x += gap) {
+          g2.beginPath(); g2.moveTo(x, a.y); g2.lineTo(x + hgt, ty0); g2.stroke();
+        }
+        g2.restore();
+      }
       g2.strokeRect(lx0, ty0, rx0 - lx0, a.y - ty0);
       g2.globalAlpha = 1;
     }
@@ -968,7 +1100,7 @@
         g2.fillStyle = "rgba(236,233,255,.8)";
         g2.font = `${Math.round(Math.min(W, H) * 0.06)}px "Black Han Sans", sans-serif`;
         g2.textAlign = "center";
-        g2.fillText("비트에 맞춰 준비!", cx, H * 0.5);
+        g2.fillText(song.boss ? "끝판왕 등장…" : "비트에 맞춰 준비!", cx, H * 0.5);
       }
     }
   }
@@ -1031,34 +1163,78 @@
   nickEl.addEventListener("change", () => { try { localStorage.setItem("beatdash.nick", nickname()); } catch (e) {} });
   function nickname() { return (nickEl.value || "").trim().slice(0, 12) || "플레이어"; }
 
+  const fmtLen = (s) => { const sec = Math.round(s.length); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; };
+  function selectSong(i) {
+    selected = i;
+    try { localStorage.setItem("beatdash.song", SONGS[i].id); } catch (e) {}
+    renderMenu();
+  }
   function renderMenu() {
+    const diff = currentDiff();
     const list = $("songList");
     list.textContent = "";
     SONGS.forEach((s, i) => {
+      if (s.boss) return;
+      const d = DIFFS[diffKey];
       const b = document.createElement("button");
       b.type = "button"; b.className = "song"; b.setAttribute("aria-pressed", String(i === selected));
       const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = s.name;
-      const tg = document.createElement("span"); tg.className = "tag " + (s.hard ? "hard" : "easy"); tg.textContent = s.diff;
-      nm.append(tg);
       const meta = document.createElement("div"); meta.className = "meta";
-      const sec = Math.round(s.length);
-      meta.textContent = `${s.bpm} BPM · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} · 블록 ${buildChart(s).length}개`;
+      meta.textContent = `${s.bpm} BPM · ${fmtLen(s)} · 블록 ${buildChart(s, d).length}개`;
       const best = document.createElement("div"); best.className = "best";
-      const bs = bestFor(s.id);
-      best.textContent = bs ? `내 최고 ${bs.toLocaleString("ko-KR")}` : "아직 기록 없음";
+      const bs = bestFor(boardKey(s, d));
+      best.textContent = bs ? `${d.name} 최고 ${bs.toLocaleString("ko-KR")}` : `${d.name} 기록 없음`;
       b.append(nm, meta, best);
-      b.addEventListener("click", () => {
-        selected = i;
-        try { localStorage.setItem("beatdash.song", s.id); } catch (e) {}
-        renderMenu();
-      });
+      b.addEventListener("click", () => selectSong(i));
       list.append(b);
     });
+
+    const dl = $("diffList");
+    dl.textContent = "";
+    dl.classList.toggle("off", !!SONGS[selected].boss);
+    for (const k of DIFF_ORDER) {
+      const d = DIFFS[k];
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "diff"; b.dataset.d = k;
+      b.setAttribute("aria-pressed", String(!SONGS[selected].boss && k === diffKey));
+      const dn = document.createElement("span"); dn.className = "dn"; dn.textContent = d.name;
+      const dm = document.createElement("span"); dm.className = "dm"; dm.textContent = `속도 ${d.pace} · 점수 ×${d.mul}`;
+      b.append(dn, dm);
+      b.addEventListener("click", () => {
+        diffKey = k;
+        try { localStorage.setItem("beatdash.diff", k); } catch (e) {}
+        if (SONGS[selected].boss) selected = 0;
+        renderMenu();
+      });
+      dl.append(b);
+    }
+
+    const slot = $("bossSlot");
+    slot.textContent = "";
+    const bi = SONGS.findIndex((s) => s.boss);
+    const boss = SONGS[bi], hd = DIFFS.hell;
+    const bb = document.createElement("button");
+    bb.type = "button"; bb.className = "boss"; bb.setAttribute("aria-pressed", String(selected === bi));
+    const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = "HELL MODE";
+    const tg = document.createElement("span"); tg.className = "tag"; tg.textContent = "끝판왕";
+    nm.append(tg);
+    const desc = document.createElement("div"); desc.className = "desc";
+    desc.textContent = `전용 곡 ${boss.name}. 2칸 블록과 엇박 블록이 쉴 틈 없이 몰려와요. 풀콤보에 도전해 보세요.`;
+    const meta = document.createElement("div"); meta.className = "meta";
+    meta.textContent = `${boss.bpm} BPM · ${fmtLen(boss)} · 블록 ${buildChart(boss, hd).length}개 · 점수 ×${hd.mul} · 콤보 최대 ×${hd.comboCap}`;
+    const best = document.createElement("div"); best.className = "best";
+    const bs = bestFor(boardKey(boss, hd));
+    best.textContent = bs ? `최고 ${bs.toLocaleString("ko-KR")}` : "아직 아무도 쓰러뜨리지 못했어요";
+    bb.append(nm, desc, meta, best);
+    bb.addEventListener("click", () => selectSong(bi));
+    slot.append(bb);
+
+    $("startBtn").textContent = SONGS[selected].boss ? "끝판왕 도전" : `${diff.name} 시작하기`;
     renderBoards();
   }
   function renderBoards() {
-    renderBoardInto($("board"), SONGS[selected].id, null);
-    if (game) renderBoardInto($("rBoard"), game.song.id, lastResultScore);
+    renderBoardInto($("board"), SONGS[selected], currentDiff(), null);
+    if (game) renderBoardInto($("rBoard"), game.song, game.diff, lastResultScore);
   }
 
   setMuted(muted);

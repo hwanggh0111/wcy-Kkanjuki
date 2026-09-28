@@ -271,9 +271,7 @@
       <div class="stats">
         <div class="stat"><div class="k">점수</div><div class="v o" id="rScore">0</div></div>
         <div class="stat"><div class="k">최대 콤보</div><div class="v g" id="rCombo">0</div></div>
-        <div class="stat"><div class="k">PERFECT</div><div class="v p" id="rP">0</div></div>
-        <div class="stat"><div class="k">GREAT</div><div class="v g" id="rG">0</div></div>
-        <div class="stat"><div class="k">GOOD</div><div class="v o" id="rO">0</div></div>
+        <div class="stat"><div class="k">피한 블록</div><div class="v p" id="rOk">0</div></div>
         <div class="stat"><div class="k">MISS</div><div class="v x" id="rX">0</div></div>
       </div>
       <p class="submit-msg" id="rMsg"></p>
@@ -335,14 +333,13 @@
 
   const JUMP_DUR = 0.52;
   const JUMP_CLEAR = 0.3; // 이 높이 이상이면 낮은 블록을 넘음
-  const BASE = { PERFECT: 300, GREAT: 200, GOOD: 100 };
+  const POINTS = 100; // 블록 하나 피할 때 기본 점수
   const OBS_COLORS = {
     wall: ["#ff6f59", "#ffa08f", "#b8412f"],
     low: ["#ffc857", "#ffe2a0", "#b88a27"],
     bar: ["#52e3c2", "#a6f5e3", "#2a9e86"],
     wide: ["#a98bff", "#d6c9ff", "#6a4fc2"],
   };
-  const JUDGE_COLOR = { PERFECT: "#ffc857", GREAT: "#52e3c2", GOOD: "#ece9ff", MISS: "#ff4d6d" };
 
   function mulberry32(a) {
     return () => {
@@ -655,9 +652,9 @@
       song, diff, chart: cloneChart(buildChart(song, diff)), state: "play",
       approach: song.approach * diff.speed,
       startTime: 0, nextStep: 0, totalSteps: song.bars.length * 16,
-      lane: 1, visLane: 1, prevLane: 1, laneChangeAt: -99, jumpStart: -99,
+      lane: 1, visLane: 1, jumpStart: -99,
       score: 0, combo: 0, maxCombo: 0,
-      counts: { PERFECT: 0, GREAT: 0, GOOD: 0, MISS: 0 },
+      counts: { OK: 0, MISS: 0 },
       judgeIdx: 0, popups: [], shake: 0, flash: 0, endAt: null,
     };
   }
@@ -703,10 +700,7 @@
   function moveLane(d) {
     if (!game || game.state !== "play") return;
     const n = Math.max(0, Math.min(2, game.lane + d));
-    if (n === game.lane) return;
-    game.prevLane = game.lane;
     game.lane = n;
-    game.laneChangeAt = songNow();
   }
   function jump() {
     if (!game || game.state !== "play") return;
@@ -719,16 +713,9 @@
     const t = e.t;
     const occupied = e.lanes[game.lane] === 1;
     const inAir = jumpHeight(t) > JUMP_CLEAR;
-    let res;
-    if (occupied && (e.type === "wall" || !inAir)) res = "MISS";
-    else if (occupied) {
-      const d = Math.abs(t - (game.jumpStart + JUMP_DUR / 2));
-      res = d < 0.07 ? "PERFECT" : d < 0.14 ? "GREAT" : "GOOD";
-    } else {
-      const since = t - game.laneChangeAt;
-      const dodged = e.lanes[game.prevLane] === 1;
-      res = dodged && since <= 0.28 ? "PERFECT" : dodged && since <= 0.55 ? "GREAT" : "GOOD";
-    }
+    // 판정은 피했는지(OK) 부딪혔는지(MISS) 두 가지뿐
+    const wide = e.type === "wall" || e.type === "wide";
+    const res = occupied && (wide || !inAir) ? "MISS" : "OK";
     e.res = res;
     game.counts[res]++;
     if (res === "MISS") {
@@ -739,10 +726,11 @@
     } else {
       game.combo++;
       game.maxCombo = Math.max(game.maxCombo, game.combo);
-      game.score += Math.round(BASE[res] * multiplier(game.combo) * game.diff.mul);
+      game.score += Math.round(POINTS * multiplier(game.combo) * game.diff.mul);
       bumpCombo();
+      return;
     }
-    game.popups.push({ text: res, color: JUDGE_COLOR[res], born: performance.now() });
+    game.popups.push({ text: "MISS", color: "#ff4d6d", born: performance.now() });
     if (game.popups.length > 6) game.popups.shift();
   }
   const multiplier = (c) => Math.min(game ? game.diff.comboCap : 4, 1 + Math.floor(c / 10) * 0.5);
@@ -770,8 +758,7 @@
 
   function gradeOf(g) {
     const total = g.chart.length;
-    const pts = g.counts.PERFECT * 3 + g.counts.GREAT * 2 + g.counts.GOOD;
-    const acc = total ? pts / (total * 3) : 0;
+    const acc = total ? g.counts.OK / total : 0;
     return { grade: acc >= 0.95 ? "S" : acc >= 0.85 ? "A" : acc >= 0.7 ? "B" : acc >= 0.5 ? "C" : "D", acc };
   }
 
@@ -787,9 +774,7 @@
     $("rSub").textContent = `${game.song.name} · ${game.diff.name} · ${game.song.bpm} BPM · 정확도 ${(acc * 100).toFixed(1)}%`;
     $("rScore").textContent = game.score.toLocaleString("ko-KR");
     $("rCombo").textContent = game.maxCombo;
-    $("rP").textContent = game.counts.PERFECT;
-    $("rG").textContent = game.counts.GREAT;
-    $("rO").textContent = game.counts.GOOD;
+    $("rOk").textContent = `${game.counts.OK} / ${game.chart.length}`;
     $("rX").textContent = game.counts.MISS;
     showScreen("result");
     $("retryBtn").focus();

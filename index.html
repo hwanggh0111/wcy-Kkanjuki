@@ -122,6 +122,32 @@
     opacity: 0; pointer-events: none; transition: opacity 0.2s;
   }
   .toast.show { opacity: 1; }
+
+  /* 대화 목록 화면 */
+  .listHead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: #FFE14D; border-bottom: 3px solid #1A1A2E; }
+  .listTitle { font-family: 'Jua', sans-serif; font-size: 22px; color: #1A1A2E; flex: 1; }
+  .newBtn {
+    background: #FF7A59; color: #FFFDF5; border: 2.5px solid #1A1A2E; border-radius: 12px;
+    padding: 5px 12px; font-size: 16px; font-family: 'Jua', sans-serif; cursor: pointer; box-shadow: 2px 2px 0 #1A1A2E;
+  }
+  .newBtn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #1A1A2E; }
+  .listBody { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .chatRow {
+    display: flex; align-items: center; gap: 10px; border: 2.5px solid #1A1A2E; border-radius: 16px;
+    padding: 10px 12px; background: #FFFDF5; box-shadow: 3px 3px 0 #1A1A2E; cursor: pointer;
+  }
+  .chatRow:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #1A1A2E; }
+  .chatRow.lv1 { background: #E9FFE4; }
+  .chatRow.lv2 { background: #FFF7C7; }
+  .chatRow.lv3 { background: #FFE0D6; }
+  .chatFace { font-size: 26px; flex-shrink: 0; }
+  .chatInfo { flex: 1; min-width: 0; }
+  .chatTitle { font-family: 'Jua', sans-serif; font-size: 17px; color: #1A1A2E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chatPrev { font-size: 14px; color: #6B6B7B; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .chatDate { font-size: 13px; color: #6B6B7B; flex-shrink: 0; align-self: flex-start; }
+  .chatDel { background: none; border: none; font-size: 18px; cursor: pointer; color: #1A1A2E; padding: 4px 6px; flex-shrink: 0; line-height: 1; }
+  .empty { text-align: center; color: #6B6B7B; font-size: 17px; margin-top: 40px; line-height: 1.6; }
+  .pickBack { background: none; border: none; color: #6B6B7B; font-size: 16px; font-family: 'Gaegu', sans-serif; cursor: pointer; text-decoration: underline; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -154,7 +180,18 @@
           <div class="lvlDesc">각오해라. 매번 깐죽대고 능청 최대치</div>
         </span>
       </button>
+
+      <button class="pickBack" id="pickBack" style="display:none;">← 이전 대화 보기</button>
     </div>
+  </div>
+
+  <!-- 대화 목록 화면 -->
+  <div class="phone" id="listScreen" style="display:none;">
+    <div class="listHead">
+      <div class="listTitle">대화 목록</div>
+      <button class="newBtn" id="newChat">＋ 새 대화</button>
+    </div>
+    <div class="listBody" id="listBody"></div>
   </div>
 
   <!-- 채팅 화면 -->
@@ -177,8 +214,8 @@
         <div class="status"><span class="dot"></span> <span id="statusText">까불 준비 완료</span></div>
       </div>
       <div class="hdrBtns">
+        <button class="again" id="toList" title="대화 목록">목록</button>
         <button class="again" id="share" title="대화 공유">공유</button>
-        <button class="again" id="again">단계 바꾸기</button>
       </div>
     </div>
 
@@ -217,7 +254,10 @@
   ];
   const NUDGE_MS = 45 * 1000; // 45초 동안 아무것도 안 하면
   const MAX_HISTORY = 20;      // 서버로 보낼 최근 대화 개수
-  const SAVE_KEY = "kkanjuki.v1";
+  const MAX_CHATS = 30;        // 저장해 두는 대화 개수
+  const MAX_SAVED_MSGS = 200;  // 대화 하나당 저장하는 메시지 개수
+  const STORE_KEY = "kkanjuki.v2";
+  const OLD_KEY = "kkanjuki.v1"; // 예전 버전(대화 하나만 저장) — 처음 한 번 옮겨옴
 
   let level = 2; // 시작 화면에서 고른 깐죽 단계
   // 대화 기록 (AI는 기억이 없어서 매번 전체를 같이 보냄)
@@ -227,28 +267,81 @@
   let nudgeTimer = null;
   let nudged = false; // 한 번 말 걸었으면 사용자가 뭔가 하기 전까진 또 안 함
 
-  // 대화 저장/복구 (사진은 용량이 커서 저장 안 하고 "📷 사진" 표시만 남김)
-  function save() {
+  // 저장된 대화들: [{ id, level, createdAt, updatedAt, messages }] (최근 것이 앞)
+  let chats = [];
+  let currentId = null; // 지금 열려 있는 대화 (목록/시작 화면에선 null)
+
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  // 사진은 용량이 커서 저장 안 하고 "📷 사진" 표시만 남김
+  function slimMessages(list) {
+    return list.slice(-MAX_SAVED_MSGS).map((m) => ({
+      role: m.role,
+      content: m.image ? ("📷 사진" + (m.content ? " · " + m.content : "")) : m.content,
+      error: m.error || false,
+    }));
+  }
+
+  function persist() {
     try {
-      const slim = messages.map((m) => ({
-        role: m.role,
-        content: m.image ? ("📷 사진" + (m.content ? " · " + m.content : "")) : m.content,
-        error: m.error || false,
-        retryOf: m.retryOf || null,
-      }));
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ level: level, messages: slim }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ current: currentId, chats: chats }));
     } catch (e) { /* 사생활 모드 등에서 저장 불가 — 그냥 넘어감 */ }
   }
-  function load() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return null;
-      const d = JSON.parse(raw);
-      if (!d || !LEVELS[d.level] || !Array.isArray(d.messages) || d.messages.length === 0) return null;
-      return d;
-    } catch (e) { return null; }
+
+  // 지금 열린 대화를 목록에 반영하고 저장
+  function save() {
+    const chat = chats.find((c) => c.id === currentId);
+    if (!chat) return;
+    chat.level = level;
+    chat.messages = slimMessages(messages);
+    chat.updatedAt = Date.now();
+    // 방금 쓴 대화를 맨 앞으로
+    chats = [chat].concat(chats.filter((c) => c.id !== chat.id)).slice(0, MAX_CHATS);
+    persist();
   }
-  function clearSaved() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+
+  function loadStore() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d && Array.isArray(d.chats)) {
+          chats = d.chats.filter((c) => c && c.id && LEVELS[c.level] && Array.isArray(c.messages));
+          currentId = chats.some((c) => c.id === d.current) ? d.current : null;
+          return;
+        }
+      }
+      // 예전 저장본이 있으면 대화 하나짜리 목록으로 옮김
+      const old = localStorage.getItem(OLD_KEY);
+      if (old) {
+        const o = JSON.parse(old);
+        if (o && LEVELS[o.level] && Array.isArray(o.messages) && o.messages.length) {
+          const id = newId();
+          chats = [{ id: id, level: o.level, createdAt: Date.now(), updatedAt: Date.now(), messages: o.messages }];
+          currentId = id;
+          persist();
+        }
+        localStorage.removeItem(OLD_KEY);
+      }
+    } catch (e) { chats = []; currentId = null; }
+  }
+
+  function chatTitle(chat) {
+    const first = chat.messages.find((m) => m.role === "user" && m.content);
+    return first ? first.content : "아직 말 안 건 대화";
+  }
+  function chatPreview(chat) {
+    const last = chat.messages[chat.messages.length - 1];
+    if (!last) return "";
+    return (last.role === "user" ? "나: " : "깐죽이: ") + (last.content || "");
+  }
+  function fmtDate(ts) {
+    const d = new Date(ts), now = new Date();
+    const pad = (n) => (n < 10 ? "0" + n : "" + n);
+    if (d.toDateString() === now.toDateString()) return pad(d.getHours()) + ":" + pad(d.getMinutes());
+    if (d.getFullYear() === now.getFullYear()) return (d.getMonth() + 1) + "/" + d.getDate();
+    return d.getFullYear() + "." + (d.getMonth() + 1) + "." + d.getDate();
+  }
 
   function toast(text) {
     const t = document.getElementById("toast");
@@ -282,11 +375,15 @@
   const pickScreenEl = document.getElementById("pickScreen");
   const chatScreenEl = document.getElementById("chatScreen");
   const statusTextEl = document.getElementById("statusText");
-  const againEl = document.getElementById("again");
 
   const headerEl = document.getElementById("header");
   const lvlBadgeEl = document.getElementById("lvlBadge");
   const shareEl = document.getElementById("share");
+  const toListEl = document.getElementById("toList");
+  const listScreenEl = document.getElementById("listScreen");
+  const listBodyEl = document.getElementById("listBody");
+  const newChatEl = document.getElementById("newChat");
+  const pickBackEl = document.getElementById("pickBack");
 
   function applyLevelLook(n) {
     statusTextEl.textContent = LEVELS[n].status;
@@ -294,42 +391,99 @@
     lvlBadgeEl.textContent = LEVELS[n].face;
   }
 
+  // 세 화면(시작/목록/채팅) 중 하나만 보여준다
+  function showScreen(which) {
+    pickScreenEl.style.display = which === "pick" ? "flex" : "none";
+    listScreenEl.style.display = which === "list" ? "flex" : "none";
+    chatScreenEl.style.display = which === "chat" ? "flex" : "none";
+    if (which !== "chat") clearTimeout(nudgeTimer);
+  }
+
   function showChat() {
-    pickScreenEl.style.display = "none";
-    chatScreenEl.style.display = "flex";
+    showScreen("chat");
     renderPreview();
     render();
     resetNudge();
     inputEl.focus();
   }
 
-  // 단계를 고르면 채팅 화면으로 넘어간다 (대화는 새로 시작)
+  // 단계를 고르면 새 대화를 만들고 채팅 화면으로
   function startChat(n) {
     level = n;
     messages = [{ role: "assistant", content: LEVELS[n].greet }];
     image = null;
     loading = false;
+    currentId = newId();
+    chats.unshift({ id: currentId, level: n, createdAt: Date.now(), updatedAt: Date.now(), messages: [] });
     applyLevelLook(n);
     save();
     showChat();
   }
 
-  // 저장된 대화가 있으면 그걸로 이어서
-  function resumeChat(saved) {
-    level = saved.level;
-    messages = saved.messages;
+  // 저장된 대화를 열어서 이어가기
+  function openChat(id) {
+    const chat = chats.find((c) => c.id === id);
+    if (!chat) return;
+    currentId = id;
+    level = chat.level;
+    messages = chat.messages.map((m) => ({ role: m.role, content: m.content, error: m.error || false }));
     image = null;
     loading = false;
     applyLevelLook(level);
+    persist();
     showChat();
   }
 
-  // 다시 단계 고르는 화면으로 (대화는 새로 시작하니 저장도 지움)
-  function backToPick() {
-    clearTimeout(nudgeTimer);
-    clearSaved();
-    chatScreenEl.style.display = "none";
-    pickScreenEl.style.display = "flex";
+  function deleteChat(id) {
+    if (!confirm("이 대화를 지울까?")) return;
+    chats = chats.filter((c) => c.id !== id);
+    if (currentId === id) currentId = null;
+    persist();
+    renderList();
+  }
+
+  // 대화 목록 화면
+  function showList() {
+    currentId = null;
+    persist();
+    renderList();
+    showScreen("list");
+  }
+
+  function renderList() {
+    listBodyEl.innerHTML = "";
+    if (chats.length === 0) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "아직 대화가 없어.\n위에 '＋ 새 대화' 눌러봐!";
+      e.style.whiteSpace = "pre-line";
+      listBodyEl.appendChild(e);
+      return;
+    }
+    chats.forEach((chat) => {
+      const row = document.createElement("div");
+      row.className = "chatRow lv" + chat.level;
+      row.innerHTML =
+        '<span class="chatFace"></span>' +
+        '<div class="chatInfo"><div class="chatTitle"></div><div class="chatPrev"></div></div>' +
+        '<span class="chatDate"></span>' +
+        '<button class="chatDel" title="지우기">✕</button>';
+      row.querySelector(".chatFace").textContent = LEVELS[chat.level].face;
+      row.querySelector(".chatTitle").textContent = chatTitle(chat);
+      row.querySelector(".chatPrev").textContent = chatPreview(chat);
+      row.querySelector(".chatDate").textContent = fmtDate(chat.updatedAt || chat.createdAt);
+      row.querySelector(".chatDel").addEventListener("click", (e) => { e.stopPropagation(); deleteChat(chat.id); });
+      row.addEventListener("click", () => openChat(chat.id));
+      listBodyEl.appendChild(row);
+    });
+  }
+
+  // 단계 고르는 화면 (새 대화 시작)
+  function showPick() {
+    currentId = null;
+    persist();
+    pickBackEl.style.display = chats.length ? "block" : "none";
+    showScreen("pick");
   }
 
   // 대화를 글로 만들어서 공유 (공유 기능 없는 브라우저면 복사)
@@ -351,7 +505,9 @@
   document.querySelectorAll(".lvl").forEach((btn) => {
     btn.addEventListener("click", () => startChat(Number(btn.dataset.level)));
   });
-  againEl.addEventListener("click", backToPick);
+  toListEl.addEventListener("click", showList);
+  newChatEl.addEventListener("click", showPick);
+  pickBackEl.addEventListener("click", showList);
   shareEl.addEventListener("click", shareChat);
   inputEl.addEventListener("input", resetNudge);
 
@@ -553,10 +709,12 @@
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
 
-  // 저장된 대화가 있으면 이어서, 없으면 단계 고르는 화면부터
+  // 열려 있던 대화가 있으면 이어서, 대화 목록만 있으면 목록부터, 아무것도 없으면 단계 고르기부터
   renderPreview();
-  const saved = load();
-  if (saved) resumeChat(saved);
+  loadStore();
+  if (currentId) openChat(currentId);
+  else if (chats.length) showList();
+  else showPick();
 </script>
 </body>
 </html>

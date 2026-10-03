@@ -99,6 +99,29 @@
     cursor: pointer; box-shadow: 2px 2px 0 #1A1A2E; flex-shrink: 0;
   }
   .again:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #1A1A2E; }
+  .hdrBtns { margin-left: auto; display: flex; gap: 6px; flex-shrink: 0; }
+  .hdrBtns .again { margin-left: 0; }
+
+  /* 단계별 헤더 색 */
+  .header.lv1 { background: #5DC98A; }
+  .header.lv2 { background: #FF7A59; }
+  .header.lv3 { background: #E8453C; }
+  .faceWrap { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
+  .lvlBadge { position: absolute; right: -8px; bottom: -6px; font-size: 16px; line-height: 1; filter: drop-shadow(1px 1px 0 #1A1A2E); }
+
+  /* 실패한 답변 + 다시 보내기 */
+  .bubble.err { background: #FFD6D6; }
+  .retry {
+    display: block; margin-top: 6px; background: #1A1A2E; color: #FFFDF5; border: none;
+    border-radius: 10px; padding: 4px 10px; font-size: 15px; font-family: 'Gaegu', sans-serif; cursor: pointer;
+  }
+  .cursor { display: inline-block; width: 2px; height: 1em; background: #1A1A2E; vertical-align: -2px; margin-left: 1px; animation: dots 0.8s infinite; }
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: #1A1A2E; color: #FFFDF5; padding: 8px 16px; border-radius: 12px; font-size: 16px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -136,7 +159,8 @@
 
   <!-- 채팅 화면 -->
   <div class="phone" id="chatScreen" style="display:none;">
-    <div class="header">
+    <div class="header lv2" id="header">
+      <div class="faceWrap"><span class="lvlBadge" id="lvlBadge">😏</span>
       <div class="jb-face" style="width:40px;height:40px;flex-shrink:0;">
         <svg width="40" height="40" viewBox="0 0 40 40">
           <rect x="2.5" y="2.5" width="35" height="35" rx="10" fill="#FFE14D" stroke="#1A1A2E" stroke-width="2.5" />
@@ -147,11 +171,15 @@
           <circle cx="30" cy="23" r="2" fill="#FF5A3C" opacity="0.5" />
         </svg>
       </div>
+      </div>
       <div>
         <div class="name">깐죽이</div>
         <div class="status"><span class="dot"></span> <span id="statusText">까불 준비 완료</span></div>
       </div>
-      <button class="again" id="again">단계 바꾸기</button>
+      <div class="hdrBtns">
+        <button class="again" id="share" title="대화 공유">공유</button>
+        <button class="again" id="again">단계 바꾸기</button>
+      </div>
     </div>
 
     <div class="chat" id="chat"></div>
@@ -169,19 +197,79 @@
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
 <script>
   // 깐죽 단계별 첫인사 / 헤더 문구
   const LEVELS = {
-    1: { greet: "왔구나~ 오늘은 좀 봐줄게. 편하게 말 걸어봐 :)", status: "1단계 · 살짝 깐죽" },
-    2: { greet: "왔어? 뭐 심심해서 왔지 ㅋㅋ 말 걸어봐, 받아줄게.", status: "2단계 · 적당히 깐죽" },
-    3: { greet: "오~ 겁도 없이 3단계를 눌렀네? 각오해라 진짜 ㅋㅋㅋ", status: "3단계 · 풀파워 깐죽" },
+    1: { greet: "왔구나~ 오늘은 좀 봐줄게. 편하게 말 걸어봐 :)", status: "1단계 · 살짝 깐죽", face: "🙂" },
+    2: { greet: "왔어? 뭐 심심해서 왔지 ㅋㅋ 말 걸어봐, 받아줄게.", status: "2단계 · 적당히 깐죽", face: "😏" },
+    3: { greet: "오~ 겁도 없이 3단계를 눌렀네? 각오해라 진짜 ㅋㅋㅋ", status: "3단계 · 풀파워 깐죽", face: "😈" },
   };
+
+  // 가만히 있으면 깐죽이가 먼저 던지는 말 (API 안 쓰고 화면에서만)
+  const NUDGES = [
+    "야 뭐해 ㅋㅋ 자냐?",
+    "...아직 거기 있어? 손가락 굳었어?",
+    "나 심심한데 말 좀 걸어봐.",
+    "생각 오래 하네. 두괄식으로 말해 두괄식으로.",
+    "어? 도망갔나? 겁먹었구나 ㅋㅋ",
+  ];
+  const NUDGE_MS = 45 * 1000; // 45초 동안 아무것도 안 하면
+  const MAX_HISTORY = 20;      // 서버로 보낼 최근 대화 개수
+  const SAVE_KEY = "kkanjuki.v1";
 
   let level = 2; // 시작 화면에서 고른 깐죽 단계
   // 대화 기록 (AI는 기억이 없어서 매번 전체를 같이 보냄)
   let messages = [];
   let loading = false;
   let image = null; // { dataUrl, mediaType, base64 }
+  let nudgeTimer = null;
+  let nudged = false; // 한 번 말 걸었으면 사용자가 뭔가 하기 전까진 또 안 함
+
+  // 대화 저장/복구 (사진은 용량이 커서 저장 안 하고 "📷 사진" 표시만 남김)
+  function save() {
+    try {
+      const slim = messages.map((m) => ({
+        role: m.role,
+        content: m.image ? ("📷 사진" + (m.content ? " · " + m.content : "")) : m.content,
+        error: m.error || false,
+        retryOf: m.retryOf || null,
+      }));
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ level: level, messages: slim }));
+    } catch (e) { /* 사생활 모드 등에서 저장 불가 — 그냥 넘어감 */ }
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      if (!d || !LEVELS[d.level] || !Array.isArray(d.messages) || d.messages.length === 0) return null;
+      return d;
+    } catch (e) { return null; }
+  }
+  function clearSaved() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+
+  function toast(text) {
+    const t = document.getElementById("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove("show"), 1600);
+  }
+
+  // 깐죽이가 먼저 말 걸기 타이머
+  function resetNudge() {
+    clearTimeout(nudgeTimer);
+    nudged = false;
+    nudgeTimer = setTimeout(() => {
+      if (loading || nudged || chatScreenEl.style.display === "none" || document.hidden) return;
+      nudged = true;
+      messages.push({ role: "assistant", content: NUDGES[Math.floor(Math.random() * NUDGES.length)] });
+      save();
+      render();
+    }, NUDGE_MS);
+  }
 
   const chatEl = document.getElementById("chat");
   const inputEl = document.getElementById("input");
@@ -196,30 +284,109 @@
   const statusTextEl = document.getElementById("statusText");
   const againEl = document.getElementById("again");
 
+  const headerEl = document.getElementById("header");
+  const lvlBadgeEl = document.getElementById("lvlBadge");
+  const shareEl = document.getElementById("share");
+
+  function applyLevelLook(n) {
+    statusTextEl.textContent = LEVELS[n].status;
+    headerEl.className = "header lv" + n;
+    lvlBadgeEl.textContent = LEVELS[n].face;
+  }
+
+  function showChat() {
+    pickScreenEl.style.display = "none";
+    chatScreenEl.style.display = "flex";
+    renderPreview();
+    render();
+    resetNudge();
+    inputEl.focus();
+  }
+
   // 단계를 고르면 채팅 화면으로 넘어간다 (대화는 새로 시작)
   function startChat(n) {
     level = n;
     messages = [{ role: "assistant", content: LEVELS[n].greet }];
     image = null;
     loading = false;
-    statusTextEl.textContent = LEVELS[n].status;
-    pickScreenEl.style.display = "none";
-    chatScreenEl.style.display = "flex";
-    renderPreview();
-    render();
-    inputEl.focus();
+    applyLevelLook(n);
+    save();
+    showChat();
   }
 
-  // 다시 단계 고르는 화면으로
+  // 저장된 대화가 있으면 그걸로 이어서
+  function resumeChat(saved) {
+    level = saved.level;
+    messages = saved.messages;
+    image = null;
+    loading = false;
+    applyLevelLook(level);
+    showChat();
+  }
+
+  // 다시 단계 고르는 화면으로 (대화는 새로 시작하니 저장도 지움)
   function backToPick() {
+    clearTimeout(nudgeTimer);
+    clearSaved();
     chatScreenEl.style.display = "none";
     pickScreenEl.style.display = "flex";
+  }
+
+  // 대화를 글로 만들어서 공유 (공유 기능 없는 브라우저면 복사)
+  async function shareChat() {
+    const text = messages
+      .map((m) => (m.role === "user" ? "나: " : "깐죽이: ") + (m.image ? "📷 " : "") + (m.content || ""))
+      .join("\n");
+    const payload = { title: "깐죽이랑 한 대화", text: text + "\n\n" + location.origin };
+    try {
+      if (navigator.share) { await navigator.share(payload); return; }
+      await navigator.clipboard.writeText(payload.text);
+      toast("대화를 복사했어!");
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // 공유창 닫은 것
+      toast("복사가 안 됐어 ㅠ");
+    }
   }
 
   document.querySelectorAll(".lvl").forEach((btn) => {
     btn.addEventListener("click", () => startChat(Number(btn.dataset.level)));
   });
   againEl.addEventListener("click", backToPick);
+  shareEl.addEventListener("click", shareChat);
+  inputEl.addEventListener("input", resetNudge);
+
+  // 폰 사진은 너무 커서(수 MB) 보내기 전에 줄인다: 긴 변 1024px, JPEG
+  function shrinkImage(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1024;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          const r = Math.min(MAX / w, MAX / h);
+          w = Math.round(w * r); h = Math.round(h * r);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        resolve({ dataUrl: dataUrl, mediaType: "image/jpeg", base64: dataUrl.split(",")[1] });
+      };
+      img.onerror = () => {
+        // 캔버스로 못 읽는 형식이면 원본 그대로
+        URL.revokeObjectURL(url);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result);
+          resolve({ dataUrl: dataUrl, mediaType: file.type || "image/png", base64: dataUrl.split(",")[1] });
+        };
+        reader.readAsDataURL(file);
+      };
+      img.src = url;
+    });
+  }
 
   function renderPreview() {
     if (image) {
@@ -234,27 +401,41 @@
 
   function render() {
     chatEl.innerHTML = "";
-    messages.forEach((m) => {
+    messages.forEach((m, i) => {
       const row = document.createElement("div");
       row.className = "row jb-msg";
       row.style.justifyContent = m.role === "user" ? "flex-end" : "flex-start";
       const bubble = document.createElement("div");
-      bubble.className = "bubble " + (m.role === "user" ? "user" : "bot");
+      bubble.className = "bubble " + (m.role === "user" ? "user" : "bot") + (m.error ? " err" : "");
       if (m.image) {
         const img = document.createElement("img");
         img.className = "sentImg";
         img.src = m.image.dataUrl;
         bubble.appendChild(img);
       }
-      if (m.content) {
+      if (m.content || m.streaming) {
         const span = document.createElement("span");
         span.textContent = m.content;
+        span.id = "msg-" + i;
         bubble.appendChild(span);
+      }
+      if (m.streaming) {
+        const c = document.createElement("span");
+        c.className = "cursor";
+        bubble.appendChild(c);
+      }
+      // 실패한 답변엔 "다시" 버튼 (직전 내 메시지를 다시 보냄)
+      if (m.error && i === messages.length - 1 && !loading) {
+        const btn = document.createElement("button");
+        btn.className = "retry";
+        btn.textContent = "다시 보내기";
+        btn.addEventListener("click", retryLast);
+        bubble.appendChild(btn);
       }
       row.appendChild(bubble);
       chatEl.appendChild(row);
     });
-    if (loading) {
+    if (loading && !messages.some((m) => m.streaming)) {
       const row = document.createElement("div");
       row.className = "row jb-msg";
       row.style.justifyContent = "flex-start";
@@ -264,17 +445,13 @@
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 
-  fileEl.addEventListener("change", (e) => {
+  fileEl.addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result);
-      image = { dataUrl: dataUrl, mediaType: file.type || "image/png", base64: dataUrl.split(",")[1] };
-      renderPreview();
-    };
-    reader.readAsDataURL(file);
     e.target.value = "";
+    if (!file) return;
+    image = await shrinkImage(file);
+    renderPreview();
+    resetNudge();
   });
 
   attachEl.addEventListener("click", () => fileEl.click());
@@ -288,12 +465,29 @@
     inputEl.value = "";
     image = null;
     renderPreview();
+    await ask();
+  }
+
+  // 마지막 답이 실패했을 때: 에러 말풍선 지우고 같은 질문을 다시 보냄
+  async function retryLast() {
+    if (loading) return;
+    const last = messages[messages.length - 1];
+    if (!last || !last.error) return;
+    messages.pop();
+    await ask();
+  }
+
+  // 지금까지의 대화를 서버에 보내고, 답을 글자 단위로 받아서 그려 넣는다
+  async function ask() {
     loading = true;
+    resetNudge();
     render();
 
-    try {
-      // 화면용 메시지 → API용 형식으로 변환 (사진은 image 블록으로)
-      const apiMessages = messages.map((m) => {
+    // 화면용 메시지 → API용 형식으로 변환 (사진은 image 블록으로, 실패/먼저 던진 말은 제외, 최근 것만)
+    const apiMessages = messages
+      .filter((m) => !m.error)
+      .slice(-MAX_HISTORY)
+      .map((m) => {
         if (m.image) {
           return {
             role: m.role,
@@ -306,32 +500,51 @@
         return { role: m.role, content: m.content };
       });
 
+    let bot = null; // 지금 채워지고 있는 답변 말풍선
+    try {
       // 키 없이 내 서버(/api/chat)만 부른다. 키는 서버가 숨기고 있음.
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages, level: level }),
       });
-      const data = await res.json();
 
-      // 서버가 이유를 알려주면 그대로 보여준다 (원인 감추지 않기)
-      if (!res.ok || data.error) {
+      // 에러는 JSON으로, 정상 답은 글자 스트림으로 온다
+      const type = res.headers.get("content-type") || "";
+      if (!res.ok || type.indexOf("application/json") >= 0) {
+        let data = {};
+        try { data = await res.json(); } catch (e) {}
         console.error("[깐죽이] 서버 응답:", res.status, data);
-        messages.push({ role: "assistant", content: "삐빅- " + (data.error || ("서버가 " + res.status + " 를 뱉었어")) });
+        messages.push({ role: "assistant", error: true, content: "삐빅- " + (data.error || ("서버가 " + res.status + " 를 뱉었어")) });
         return;
       }
 
-      const reply = (data.content || [])
-        .map((b) => (b.type === "text" ? b.text : ""))
-        .filter(Boolean)
-        .join("\n");
-      messages.push({ role: "assistant", content: reply || "어? 할 말을 잃었네 ㅋㅋ" });
+      bot = { role: "assistant", content: "", streaming: true };
+      messages.push(bot);
+      render();
+      const idx = messages.length - 1;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const r = await reader.read();
+        if (r.done) break;
+        bot.content += decoder.decode(r.value, { stream: true });
+        const span = document.getElementById("msg-" + idx);
+        if (span) { span.textContent = bot.content; chatEl.scrollTop = chatEl.scrollHeight; }
+      }
+      bot.streaming = false;
+      if (!bot.content) bot.content = "어? 할 말을 잃었네 ㅋㅋ";
+      if (bot.content.indexOf("삐빅-") === 0) bot.error = true; // 서버가 스트림 도중 실패 사유를 보낸 경우
     } catch (err) {
       console.error("[깐죽이] 통신 실패:", err);
-      messages.push({ role: "assistant", content: "삐빅- 서버까지 못 갔어 (" + (err && err.message ? err.message : err) + ")" });
+      if (bot) { bot.streaming = false; if (!bot.content) messages.pop(); }
+      messages.push({ role: "assistant", error: true, content: "삐빅- 서버까지 못 갔어 (" + (err && err.message ? err.message : err) + ")" });
     } finally {
       loading = false;
+      save();
       render();
+      resetNudge();
     }
   }
 
@@ -340,8 +553,10 @@
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   });
 
-  // 처음엔 단계 고르는 화면부터 보여준다
+  // 저장된 대화가 있으면 이어서, 없으면 단계 고르는 화면부터
   renderPreview();
+  const saved = load();
+  if (saved) resumeChat(saved);
 </script>
 </body>
 </html>

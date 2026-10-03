@@ -87,6 +87,72 @@ function toGemini(messages) {
   });
 }
 
+// 한 번에 보내는 대화 길이 제한 (오래된 건 잘라냄 — 토큰 절약 + 속도)
+var MAX_HISTORY = 20;
+
+// 요청 제한: 같은 IP에서 1분에 RATE_LIMIT번까지
+// (서버리스라 인스턴스마다 따로 세지만, 주소만 알고 키 할당량을 퍼 쓰는 걸 막는 데는 충분)
+var RATE_LIMIT = 20;
+var RATE_WINDOW_MS = 60 * 1000;
+var hits = new Map(); // ip -> [timestamp, ...]
+
+function isRateLimited(ip) {
+  var now = Date.now();
+  var list = (hits.get(ip) || []).filter(function (t) { return now - t < RATE_WINDOW_MS; });
+  if (list.length >= RATE_LIMIT) { hits.set(ip, list); return true; }
+  list.push(now);
+  hits.set(ip, list);
+  // 오래된 IP 기록은 가끔 정리
+  if (hits.size > 5000) {
+    hits.forEach(function (v, k) { if (v.every(function (t) { return now - t >= RATE_WINDOW_MS; })) hits.delete(k); });
+  }
+  return false;
+}
+
+function clientIp(req) {
+  var fwd = req.headers["x-forwarded-for"];
+  if (typeof fwd === "string" && fwd) return fwd.split(",")[0].trim();
+  return (req.socket && req.socket.remoteAddress) || "unknown";
+}
+
+// Gemini의 SSE 스트림("data: {...}\n\n" 덩어리들)에서 텍스트 조각만 뽑아서 콜백으로 넘긴다
+async function readGeminiStream(response, onText) {
+  var decoder = new TextDecoder();
+  var buf = "";
+  var reader = response.body.getReader();
+  var finishReason = null;
+  var blockReason = null;
+  var gotAny = false;
+
+  function handleLine(line) {
+    if (line.indexOf("data:") !== 0) return;
+    var json = line.slice(5).trim();
+    if (!json) return;
+    var chunk;
+    try { chunk = JSON.parse(json); } catch (e) { return; }
+    if (chunk.promptFeedback && chunk.promptFeedback.blockReason) blockReason = chunk.promptFeedback.blockReason;
+    var cand = (chunk.candidates || [])[0];
+    if (!cand) return;
+    if (cand.finishReason) finishReason = cand.finishReason;
+    (((cand.content || {}).parts) || []).forEach(function (p) {
+      if (p.text) { gotAny = true; onText(p.text); }
+    });
+  }
+
+  while (true) {
+    var r = await reader.read();
+    if (r.done) break;
+    buf += decoder.decode(r.value, { stream: true });
+    var idx;
+    while ((idx = buf.indexOf("\n")) >= 0) {
+      handleLine(buf.slice(0, idx).replace(/\r$/, ""));
+      buf = buf.slice(idx + 1);
+    }
+  }
+  if (buf) handleLine(buf);
+  return { gotAny: gotAny, finishReason: finishReason, blockReason: blockReason };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "POST 요청만 받아요" });
@@ -97,12 +163,22 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "서버에 GEMINI_API_KEY가 설정되지 않았어요" });
   }
 
+  if (isRateLimited(clientIp(req))) {
+    return res.status(429).json({ error: "너무 빨리 보내는데? 1분만 쉬었다 와 ㅋㅋ" });
+  }
+
   try {
     var messages = req.body.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "보낼 메시지가 없어요" });
+    }
+    if (messages.length > MAX_HISTORY) messages = messages.slice(-MAX_HISTORY);
+
     var systemPrompt = buildSystemPrompt(req.body.level);
     var model = "gemini-2.5-flash"; // 필요하면 Google AI Studio에서 최신 모델명으로 바꿔도 됨
 
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+    // 스트리밍 주소: 답이 만들어지는 대로 조금씩 받는다
+    var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
 
     var response = await fetch(url, {
       method: "POST",
@@ -122,44 +198,37 @@ export default async function handler(req, res) {
       }),
     });
 
-    var data = await response.json();
-
-    // 구글이 에러를 돌려준 경우 (키 문제, 모델명 오타, 할당량 초과 등)
-    if (!response.ok || data.error) {
-      var g = data.error || {};
+    // 구글이 에러를 돌려준 경우 (키 문제, 모델명 오타, 할당량 초과 등) — 에러는 스트림이 아니라 JSON으로 옴
+    if (!response.ok) {
+      var g = {};
+      try { g = (await response.json()).error || {}; } catch (e) {}
       console.error("[깐죽이] Gemini 에러:", response.status, JSON.stringify(g));
       return res.status(502).json({
         error: "AI가 거절했어: " + (g.message || "HTTP " + response.status),
       });
     }
 
-    var cand = (data.candidates || [])[0];
+    // 여기서부터는 화면으로 글자를 바로바로 흘려보낸다 (text/plain 스트림)
+    res.status(200);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
 
-    // 안전필터 등으로 아예 후보가 없는 경우
-    if (!cand) {
-      var block = (data.promptFeedback || {}).blockReason;
-      console.error("[깐죽이] 후보 없음:", JSON.stringify(data.promptFeedback || {}));
-      return res.status(502).json({
-        error: block ? "그 메시지는 막혔어 (" + block + ")" : "AI가 아무것도 안 돌려줬어",
-      });
+    var result = await readGeminiStream(response, function (text) { res.write(text); });
+
+    // 한 글자도 못 받았으면 이유를 알려준다 (헤더는 이미 200으로 나갔으니 본문에 표시 문구로)
+    if (!result.gotAny) {
+      console.error("[깐죽이] 빈 응답:", result.finishReason, result.blockReason);
+      var why = result.blockReason
+        ? "그 메시지는 막혔어 (" + result.blockReason + ")"
+        : "AI가 답을 못 만들었어 (사유: " + (result.finishReason || "알 수 없음") + ")";
+      res.write("삐빅- " + why);
     }
-
-    var reply = (((cand.content || {}).parts) || [])
-      .map(function (p) { return p.text || ""; })
-      .join("");
-
-    // 답이 비었으면 왜 비었는지(끊김/필터 등)를 알려준다
-    if (!reply) {
-      console.error("[깐죽이] 빈 응답:", cand.finishReason, JSON.stringify(data.usageMetadata || {}));
-      return res.status(502).json({
-        error: "AI가 답을 못 만들었어 (사유: " + (cand.finishReason || "알 수 없음") + ")",
-      });
-    }
-
-    // 화면(index.html)이 기대하는 형식으로 맞춰서 돌려줌
-    return res.status(200).json({ content: [{ type: "text", text: reply }] });
+    return res.end();
   } catch (err) {
     console.error("[깐죽이] 호출 실패:", err);
+    if (res.headersSent) return res.end();
     return res.status(500).json({ error: "AI 호출 중 문제가 생겼어요: " + (err && err.message ? err.message : err) });
   }
 }

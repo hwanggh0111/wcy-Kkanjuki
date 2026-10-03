@@ -7,6 +7,8 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
 ```
 /
 ├─ index.html          ← 화면 (키 없음, 안전)
+├─ config.js           ← 로그인용 Supabase 주소/공개키 (비워두면 로그인 기능 꺼짐)
+├─ supabase/schema.sql ← 로그인 DB 만들 때 한 번 실행하는 SQL
 ├─ api/
 │  └─ chat.js          ← 작은 서버 (여기서만 키를 사용)
 └─ .claude/
@@ -23,6 +25,7 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
 - 45초 가만히 있으면 깐죽이가 먼저 말 걸음
 - "공유" 버튼으로 대화 텍스트 공유/복사
 - 같은 IP에서 1분에 20번까지만 (키 할당량 보호)
+- 로그인(닉네임/이메일/구글)하면 대화가 계정에 저장돼서 다른 기기에서도 이어짐, 깐죽이가 이름도 불러줌
 
 ## 배포 순서 (Vercel 기준, 무료로 가능)
 
@@ -43,6 +46,20 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
 4. **나온 주소를 친구들한테 공유**
    - `https://내프로젝트.vercel.app` 같은 주소가 생겨요. 그걸 보내면 끝.
    - 친구들은 키도, 로그인도 필요 없어요.
+
+## 로그인 켜기 (Supabase, 무료)
+로그인 없이도 잘 돌아가요. 계정 저장을 쓰고 싶을 때만 하세요.
+
+1. supabase.com 가입 → New project (이름·비밀번호·지역은 아무거나, Seoul 추천)
+2. 왼쪽 **SQL Editor** → `supabase/schema.sql` 내용 붙여넣고 **Run**
+3. **Authentication → Providers → Email** 에서 **Confirm email 끄기** (닉네임만으로 가입하려면 꼭 필요)
+4. (선택) 구글 로그인: **Authentication → Providers → Google** 켜고, Google Cloud Console에서 OAuth 클라이언트 만들어 ID/Secret 입력.
+   Supabase가 알려주는 Callback URL을 구글 쪽 "승인된 리디렉션 URI"에 넣어야 해요.
+   **Authentication → URL Configuration** 의 Site URL은 배포 주소(`https://내프로젝트.vercel.app`)로.
+5. **Settings → API** 의 Project URL 과 anon public 키를 `config.js`에 적고 커밋·배포
+   (anon 키는 공개용이라 깃허브에 올라가도 괜찮아요. RLS가 각자 자기 대화만 보게 막아줍니다)
+
+로그인 방식: 닉네임+비밀번호(이메일 없이), 이메일+비밀번호, 구글. 로그인 전에 손님으로 쓴 대화는 로그인하면 계정으로 옮겨져요.
 
 ## 내 컴퓨터에서 미리보기
 - 프로젝트 루트에 `.env` 파일을 만들고 `GEMINI_API_KEY=AIza...` 한 줄을 적어요 (`.gitignore`에 들어 있어서 깃허브엔 안 올라감).

@@ -59,12 +59,16 @@ const LEVEL_PROMPTS = {
 };
 
 // 기본 성격 + 고른 단계의 톤을 합쳐서 최종 시스템 프롬프트를 만든다
-function buildSystemPrompt(level) {
+function buildSystemPrompt(level, name) {
   var n = Number(level);
   if (n !== 1 && n !== 2 && n !== 3) n = 2; // 이상한 값이 오면 2단계로
   var gap = "\n\n";
   var tail = "단계 톤이 기본 성격보다 우선이야. 다만 '도와주기 규칙'은 어떤 단계에서든 항상 최우선이다.";
-  return BASE_PROMPT + gap + LEVEL_PROMPTS[n] + gap + tail;
+  var who = "";
+  // 로그인한 사용자면 이름을 알려줘서 가끔 불러주게 한다
+  var nick = typeof name === "string" ? name.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 20) : "";
+  if (nick) who = gap + "지금 얘기하는 사람 이름은 '" + nick + "'(이)야. 가끔 이름을 부르면서 말해. 매번은 말고, 자연스러울 때만.";
+  return BASE_PROMPT + gap + LEVEL_PROMPTS[n] + gap + tail + who;
 }
 
 // Anthropic식 메시지(화면에서 옴)를 Gemini 형식으로 변환
@@ -174,7 +178,7 @@ export default async function handler(req, res) {
     }
     if (messages.length > MAX_HISTORY) messages = messages.slice(-MAX_HISTORY);
 
-    var systemPrompt = buildSystemPrompt(req.body.level);
+    var systemPrompt = buildSystemPrompt(req.body.level, req.body.name);
     var model = "gemini-2.5-flash"; // 필요하면 Google AI Studio에서 최신 모델명으로 바꿔도 됨
 
     // 스트리밍 주소: 답이 만들어지는 대로 조금씩 받는다

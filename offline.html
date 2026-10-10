@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>깐죽이</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;
+    background: radial-gradient(circle at 30% 20%, #FFEFC2 0%, #FFD9A0 60%, #FFC074 100%);
+    font-family: 'Gaegu', sans-serif; color: #1A1A2E; text-align: center;
+  }
+  .card { background: #FFFDF5; border: 3px solid #1A1A2E; border-radius: 28px; box-shadow: 8px 8px 0 #1A1A2E; padding: 36px 28px; max-width: 360px; }
+  h1 { font-family: 'Jua', sans-serif; font-size: 26px; margin: 0 0 10px; }
+  p { font-size: 18px; margin: 0 0 18px; line-height: 1.5; }
+  button { background: #FF7A59; color: #FFFDF5; border: 2.5px solid #1A1A2E; border-radius: 14px; padding: 10px 20px; font-size: 18px; font-family: 'Jua', sans-serif; cursor: pointer; box-shadow: 3px 3px 0 #1A1A2E; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size:48px;">😴</div>
+    <h1>인터넷이 없네?</h1>
+    <p>깐죽이는 인터넷이 있어야 까불 수 있어.<br />와이파이나 데이터 켜고 다시 와봐.</p>
+    <button onclick="location.reload()">다시 해보기</button>
+  </div>
+</body>
+</html>

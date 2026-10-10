@@ -9,6 +9,10 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
 ├─ index.html          ← 화면 (키 없음, 안전)
 ├─ config.js           ← 로그인용 Supabase 주소/공개키 (비워두면 로그인 기능 꺼짐)
 ├─ supabase/schema.sql ← 로그인 DB 만들 때 한 번 실행하는 SQL
+├─ admin.html          ← 관리자 페이지 (비밀번호 필요)
+├─ sw.js, offline.html ← 홈 화면 설치·오프라인용
+├─ api/admin.js        ← 관리자 통계 API
+├─ lib/usage.js        ← 사용 기록 저장 (Supabase)
 ├─ api/
 │  └─ chat.js          ← 작은 서버 (여기서만 키를 사용)
 └─ .claude/
@@ -26,6 +30,11 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
 - "공유" 버튼으로 대화 텍스트 공유/복사
 - 같은 IP에서 1분에 20번까지만 (키 할당량 보호)
 - 로그인(닉네임/이메일/구글)하면 대화가 계정에 저장돼서 다른 기기에서도 이어짐, 깐죽이가 이름도 불러줌
+- 📚 숙제 모드: 켜면 까불지 않고 차근차근 설명 (대화마다 따로 기억)
+- 대화 검색, 제목 바꾸기(✎), 즐겨찾기(★)로 위에 고정
+- 힘들거나 위험한 말(괴롭힘·자해 등)이 보이면 상담전화(1388·117·112) 안내를 띄우고 AI도 장난을 멈춤
+- 홈 화면에 추가(PWA): 설치 안내 배너, 오프라인이면 안내 화면
+- 관리자 페이지 `/admin.html`: 날짜별 요청·사용자·에러·토큰 (대화 내용은 저장 안 함)
 
 ## 배포 순서 (Vercel 기준, 무료로 가능)
 
@@ -60,6 +69,18 @@ AI는 Google **Gemini**(`gemini-2.5-flash`)를 씁니다.
    (anon 키는 공개용이라 깃허브에 올라가도 괜찮아요. RLS가 각자 자기 대화만 보게 막아줍니다)
 
 로그인 방식: 닉네임+비밀번호(이메일 없이), 이메일+비밀번호, 구글. 로그인 전에 손님으로 쓴 대화는 로그인하면 계정으로 옮겨져요.
+
+## 관리자 페이지 켜기
+`https://내프로젝트.vercel.app/admin.html` 에서 사용량을 볼 수 있어요. Vercel > Settings > Environment Variables 에 세 개를 추가하세요.
+
+| 이름 | 값 |
+|---|---|
+| `ADMIN_PASSWORD` | 관리자 페이지 들어갈 때 칠 비밀번호 (아무거나 길게) |
+| `SUPABASE_URL` | Supabase > Settings > API 의 Project URL |
+| `SUPABASE_SERVICE_KEY` | 같은 화면의 **service_role** 키 — 이건 비밀! 코드나 config.js에 절대 넣지 말고 Vercel 환경변수에만 |
+
+`supabase/schema.sql`을 아직 안 돌렸으면 돌려야 `usage_log` 테이블이 생겨요 (로그인 설정 때 이미 돌렸다면 다시 한 번 돌려도 안전해요).
+세 개 중 하나라도 없으면 사용 기록은 안 남고 앱은 그냥 돌아갑니다.
 
 ## 내 컴퓨터에서 미리보기
 - 프로젝트 루트에 `.env` 파일을 만들고 `GEMINI_API_KEY=AIza...` 한 줄을 적어요 (`.gitignore`에 들어 있어서 깃허브엔 안 올라감).

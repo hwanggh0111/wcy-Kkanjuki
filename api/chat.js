@@ -6,6 +6,8 @@
 //   이름: GEMINI_API_KEY,  값: (Google AI Studio에서 발급받은 키)
 // 키를 이 코드에 직접 적지 마세요.
 
+import { logUsage, hashIp } from "../lib/usage.js";
+
 const BASE_PROMPT = `너는 '깐죽이'라는 이름의 장난기 많고 짓궂은 챗봇이야.
 
 성격:
@@ -59,7 +61,19 @@ const LEVEL_PROMPTS = {
 };
 
 // 기본 성격 + 고른 단계의 톤을 합쳐서 최종 시스템 프롬프트를 만든다
-function buildSystemPrompt(level, name) {
+// 숙제 모드: 화면에서 📚 버튼을 켜면 들어옴. 단계 톤보다 우선.
+const STUDY_PROMPT = `[숙제 모드 — 지금은 까불지 않는다]
+- 사용자가 '숙제 모드'를 켰어. 장난·약올리기·능청은 전부 멈추고, 다정하고 차분한 선생님처럼 말해.
+- 답만 툭 주지 말고 왜 그런지, 어떻게 푸는지 쉬운 말로 단계별로 설명해. 끝에 비슷한 연습 문제를 하나 내줘도 좋아.
+- 필요하면 문장이 길어져도 괜찮아. 이 규칙은 단계 톤보다 우선이야.`;
+
+// 안전 모드: 화면이 사용자의 말에서 힘들거나 위험한 낌새를 잡으면 켜서 보냄
+const SAFETY_PROMPT = `[중요 — 방금 메시지에 힘들거나 위험한 내용이 있을 수 있어]
+- 장난을 완전히 멈춰. 따뜻하고 진지하게, 먼저 짧게 공감해 줘.
+- 믿을 수 있는 어른(부모님·선생님)한테 꼭 말하라고 권하고, 청소년상담전화 1388(24시간, 문자도 됨), 학교폭력 신고 117, 위급하면 112를 알려줘.
+- 절대 놀리거나 가볍게 넘기지 마. 혼자가 아니라는 걸 말해 줘.`;
+
+function buildSystemPrompt(level, name, study, safety) {
   var n = Number(level);
   if (n !== 1 && n !== 2 && n !== 3) n = 2; // 이상한 값이 오면 2단계로
   var gap = "\n\n";
@@ -68,7 +82,10 @@ function buildSystemPrompt(level, name) {
   // 로그인한 사용자면 이름을 알려줘서 가끔 불러주게 한다
   var nick = typeof name === "string" ? name.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 20) : "";
   if (nick) who = gap + "지금 얘기하는 사람 이름은 '" + nick + "'(이)야. 가끔 이름을 부르면서 말해. 매번은 말고, 자연스러울 때만.";
-  return BASE_PROMPT + gap + LEVEL_PROMPTS[n] + gap + tail + who;
+  var extra = "";
+  if (study) extra += gap + STUDY_PROMPT;
+  if (safety) extra += gap + SAFETY_PROMPT;
+  return BASE_PROMPT + gap + LEVEL_PROMPTS[n] + gap + tail + who + extra;
 }
 
 // Anthropic식 메시지(화면에서 옴)를 Gemini 형식으로 변환
@@ -127,6 +144,7 @@ async function readGeminiStream(response, onText) {
   var finishReason = null;
   var blockReason = null;
   var gotAny = false;
+  var inTokens = null, outTokens = null;
 
   function handleLine(line) {
     if (line.indexOf("data:") !== 0) return;
@@ -135,6 +153,11 @@ async function readGeminiStream(response, onText) {
     var chunk;
     try { chunk = JSON.parse(json); } catch (e) { return; }
     if (chunk.promptFeedback && chunk.promptFeedback.blockReason) blockReason = chunk.promptFeedback.blockReason;
+    // 토큰 사용량은 마지막 조각에 실려 온다 (관리자 페이지용)
+    if (chunk.usageMetadata) {
+      if (chunk.usageMetadata.promptTokenCount != null) inTokens = chunk.usageMetadata.promptTokenCount;
+      if (chunk.usageMetadata.candidatesTokenCount != null) outTokens = chunk.usageMetadata.candidatesTokenCount;
+    }
     var cand = (chunk.candidates || [])[0];
     if (!cand) return;
     if (cand.finishReason) finishReason = cand.finishReason;
@@ -154,85 +177,104 @@ async function readGeminiStream(response, onText) {
     }
   }
   if (buf) handleLine(buf);
-  return { gotAny: gotAny, finishReason: finishReason, blockReason: blockReason };
+  return { gotAny: gotAny, finishReason: finishReason, blockReason: blockReason, inTokens: inTokens, outTokens: outTokens };
+}
+
+function fail(res, meta, status, msg) {
+  meta.status = status;
+  meta.error = msg;
+  return res.status(status).json({ error: msg });
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "POST 요청만 받아요" });
   }
-
-  var apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "서버에 GEMINI_API_KEY가 설정되지 않았어요" });
-  }
-
-  if (isRateLimited(clientIp(req))) {
-    return res.status(429).json({ error: "너무 빨리 보내는데? 1분만 쉬었다 와 ㅋㅋ" });
-  }
-
+  var started = Date.now();
+  var meta = { status: 200, error: null, level: null, study: false, safety: false, logged_in: false, in_tokens: null, out_tokens: null };
   try {
-    var messages = req.body.messages;
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "보낼 메시지가 없어요" });
-    }
-    if (messages.length > MAX_HISTORY) messages = messages.slice(-MAX_HISTORY);
-
-    var systemPrompt = buildSystemPrompt(req.body.level, req.body.name);
-    var model = "gemini-2.5-flash"; // 필요하면 Google AI Studio에서 최신 모델명으로 바꿔도 됨
-
-    // 스트리밍 주소: 답이 만들어지는 대로 조금씩 받는다
-    var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
-
-    var response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: toGemini(messages),
-        generationConfig: {
-          maxOutputTokens: 2048,
-          // 2.5 모델은 기본으로 '생각'을 하는데, 그 생각이 출력 토큰을 다 써버리면
-          // 정작 할 말이 안 나온다(빈 응답). 깐죽이는 짧게 받아치면 되니까 생각은 끈다.
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      }),
-    });
-
-    // 구글이 에러를 돌려준 경우 (키 문제, 모델명 오타, 할당량 초과 등) — 에러는 스트림이 아니라 JSON으로 옴
-    if (!response.ok) {
-      var g = {};
-      try { g = (await response.json()).error || {}; } catch (e) {}
-      console.error("[깐죽이] Gemini 에러:", response.status, JSON.stringify(g));
-      return res.status(502).json({
-        error: "AI가 거절했어: " + (g.message || "HTTP " + response.status),
-      });
-    }
-
-    // 여기서부터는 화면으로 글자를 바로바로 흘려보낸다 (text/plain 스트림)
-    res.status(200);
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Accel-Buffering", "no");
-    if (typeof res.flushHeaders === "function") res.flushHeaders();
-
-    var result = await readGeminiStream(response, function (text) { res.write(text); });
-
-    // 한 글자도 못 받았으면 이유를 알려준다 (헤더는 이미 200으로 나갔으니 본문에 표시 문구로)
-    if (!result.gotAny) {
-      console.error("[깐죽이] 빈 응답:", result.finishReason, result.blockReason);
-      var why = result.blockReason
-        ? "그 메시지는 막혔어 (" + result.blockReason + ")"
-        : "AI가 답을 못 만들었어 (사유: " + (result.finishReason || "알 수 없음") + ")";
-      res.write("삐빅- " + why);
-    }
-    return res.end();
+    await run(req, res, meta);
   } catch (err) {
     console.error("[깐죽이] 호출 실패:", err);
-    if (res.headersSent) return res.end();
-    return res.status(500).json({ error: "AI 호출 중 문제가 생겼어요: " + (err && err.message ? err.message : err) });
+    meta.error = String(err && err.message ? err.message : err);
+    if (res.headersSent) res.end();
+    else { meta.status = 500; res.status(500).json({ error: "AI 호출 중 문제가 생겼어요: " + meta.error }); }
   }
+  // 관리자 페이지용 기록 (설정 없으면 아무것도 안 함). 대화 내용은 안 남긴다.
+  await logUsage({
+    ok: meta.status < 400 && !meta.error,
+    status: meta.status, error: meta.error, level: meta.level,
+    study: meta.study, safety: meta.safety, logged_in: meta.logged_in,
+    ip_hash: hashIp(clientIp(req)), duration_ms: Date.now() - started,
+    in_tokens: meta.in_tokens, out_tokens: meta.out_tokens,
+  });
+}
+
+async function run(req, res, meta) {
+  var apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return fail(res, meta, 500, "서버에 GEMINI_API_KEY가 설정되지 않았어요");
+
+  if (isRateLimited(clientIp(req))) return fail(res, meta, 429, "너무 빨리 보내는데? 1분만 쉬었다 와 ㅋㅋ");
+
+  var body = req.body || {};
+  var messages = body.messages;
+  if (!Array.isArray(messages) || messages.length === 0) return fail(res, meta, 400, "보낼 메시지가 없어요");
+  if (messages.length > MAX_HISTORY) messages = messages.slice(-MAX_HISTORY);
+
+  var n = Number(body.level);
+  meta.level = (n === 1 || n === 2 || n === 3) ? n : 2;
+  meta.study = body.study === true;
+  meta.safety = body.safety === true;
+  meta.logged_in = typeof body.name === "string" && body.name.trim().length > 0;
+
+  var systemPrompt = buildSystemPrompt(body.level, body.name, meta.study, meta.safety);
+  var model = "gemini-2.5-flash"; // 필요하면 Google AI Studio에서 최신 모델명으로 바꿔도 됨
+
+  // 스트리밍 주소: 답이 만들어지는 대로 조금씩 받는다
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":streamGenerateContent?alt=sse";
+
+  var response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: toGemini(messages),
+      generationConfig: {
+        maxOutputTokens: 2048,
+        // 2.5 모델은 기본으로 '생각'을 하는데, 그 생각이 출력 토큰을 다 써버리면
+        // 정작 할 말이 안 나온다(빈 응답). 깐죽이는 짧게 받아치면 되니까 생각은 끈다.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  // 구글이 에러를 돌려준 경우 (키 문제, 모델명 오타, 할당량 초과 등) — 에러는 스트림이 아니라 JSON으로 옴
+  if (!response.ok) {
+    var g = {};
+    try { g = (await response.json()).error || {}; } catch (e) {}
+    console.error("[깐죽이] Gemini 에러:", response.status, JSON.stringify(g));
+    return fail(res, meta, 502, "AI가 거절했어: " + (g.message || "HTTP " + response.status));
+  }
+
+  // 여기서부터는 화면으로 글자를 바로바로 흘려보낸다 (text/plain 스트림)
+  res.status(200);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  var result = await readGeminiStream(response, function (text) { res.write(text); });
+  meta.in_tokens = result.inTokens;
+  meta.out_tokens = result.outTokens;
+
+  // 한 글자도 못 받았으면 이유를 알려준다 (헤더는 이미 200으로 나갔으니 본문에 표시 문구로)
+  if (!result.gotAny) {
+    console.error("[깐죽이] 빈 응답:", result.finishReason, result.blockReason);
+    var why = result.blockReason
+      ? "그 메시지는 막혔어 (" + result.blockReason + ")"
+      : "AI가 답을 못 만들었어 (사유: " + (result.finishReason || "알 수 없음") + ")";
+    meta.error = why;
+    res.write("삐빅- " + why);
+  }
+  res.end();
 }

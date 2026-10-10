@@ -67,10 +67,12 @@
   }
   .send {
     background: #FF7A59; color: #FFFDF5; border: 2.5px solid #1A1A2E; border-radius: 14px;
-    padding: 0 18px; font-size: 18px; font-family: 'Jua', sans-serif; cursor: pointer;
-    box-shadow: 3px 3px 0 #1A1A2E; transition: transform 0.08s;
+    padding: 0 14px; font-size: 18px; font-family: 'Jua', sans-serif; cursor: pointer;
+    box-shadow: 3px 3px 0 #1A1A2E; transition: transform 0.08s; white-space: nowrap; flex-shrink: 0;
   }
   .send:disabled { opacity: 0.5; }
+  .inputBar .input { min-width: 0; }
+  .status { white-space: nowrap; }
   .attach { background: #FFE14D; color: #1A1A2E; border: 2.5px solid #1A1A2E; border-radius: 14px; padding: 0 14px; font-size: 22px; font-family: 'Jua', sans-serif; cursor: pointer; box-shadow: 3px 3px 0 #1A1A2E; transition: transform 0.08s; flex-shrink: 0; }
   .attach:active { transform: translateY(2px) scale(0.96); }
   .preview { display: flex; align-items: flex-start; gap: 6px; padding: 10px 12px 0; }
@@ -169,6 +171,32 @@
   .authMsg { min-height: 22px; text-align: center; font-size: 16px; color: #D7263D; white-space: pre-line; }
   .authMsg.ok { color: #2E8B57; }
   .orLine { text-align: center; color: #6B6B7B; font-size: 14px; }
+
+  /* 숙제 모드 버튼 (입력창 옆) */
+  .study { background: #FFFDF5; color: #1A1A2E; border: 2.5px solid #1A1A2E; border-radius: 14px; padding: 0 10px; font-size: 20px; cursor: pointer; box-shadow: 3px 3px 0 #1A1A2E; transition: transform 0.08s; flex-shrink: 0; }
+  .study.on { background: #5DC98A; }
+  .study:active { transform: translateY(2px) scale(0.96); }
+  .header.studyOn { background: #4A90E2; }
+
+  /* 안전 안내 */
+  .safety { display: none; gap: 8px; align-items: flex-start; margin: 0 12px 8px; padding: 10px 12px; background: #E4F0FF; border: 2.5px solid #1A1A2E; border-radius: 14px; font-size: 15px; line-height: 1.45; }
+  .safety.show { display: flex; }
+  .safety b { font-family: 'Jua', sans-serif; font-weight: normal; }
+  .safety a { color: #1A1A2E; font-weight: bold; }
+  .safetyX { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0 2px; flex-shrink: 0; }
+
+  /* 대화 검색 + 즐겨찾기/제목 */
+  .searchBar { padding: 10px 12px 0; }
+  .searchBar .input { width: 100%; font-size: 16px; padding: 8px 12px; }
+  .chatBtns { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+  .chatPin, .chatEdit { background: none; border: none; font-size: 16px; cursor: pointer; color: #1A1A2E; padding: 2px 6px; line-height: 1; }
+  .chatPin.on { color: #E8A800; }
+  .pinMark { font-size: 13px; margin-right: 3px; }
+
+  /* 홈 화면에 추가 안내 */
+  .installBar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5; display: none; gap: 8px; align-items: center; max-width: calc(100% - 32px); background: #FFFDF5; border: 2.5px solid #1A1A2E; border-radius: 16px; box-shadow: 4px 4px 0 #1A1A2E; padding: 8px 10px 8px 14px; font-size: 15px; }
+  .installBar.show { display: flex; }
+  .installBar .again { margin-left: 0; }
 </style>
 </head>
 <body>
@@ -243,6 +271,7 @@
       <button class="again" id="acct">로그인</button>
       <button class="newBtn" id="newChat">＋ 새 대화</button>
     </div>
+    <div class="searchBar"><input class="input" id="search" placeholder="🔍 대화 찾기 (제목이나 내용)" /></div>
     <div class="listBody" id="listBody"></div>
   </div>
 
@@ -278,15 +307,32 @@
       <button class="previewX" id="previewX">✕</button>
     </div>
 
+    <div class="safety" id="safety">
+      <div>
+        <b>힘든 일이 있으면 혼자 끙끙대지 마.</b><br />
+        믿을 수 있는 어른한테 꼭 얘기해줘. 바로 얘기할 데가 필요하면
+        <a href="tel:1388">청소년상담전화 1388</a> (24시간, 문자도 돼) ·
+        <a href="tel:117">학교폭력 117</a> ·
+        위급하면 <a href="tel:112">112</a>
+      </div>
+      <button class="safetyX" id="safetyX" title="닫기">✕</button>
+    </div>
+
     <div class="inputBar">
       <input type="file" id="file" accept="image/*" style="display:none;" />
       <button class="attach jb-send" id="attach" title="사진 보내기">＋</button>
+      <button class="study" id="study" title="숙제 모드: 까불지 않고 차근차근 설명">📚</button>
       <input class="input" id="input" placeholder="뭐라도 말 걸어봐..." />
       <button class="send jb-send" id="send">보내기</button>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
+  <div class="installBar" id="installBar">
+    <span>📱 홈 화면에 추가하면 앱처럼 쓸 수 있어</span>
+    <button class="again" id="installYes">추가</button>
+    <button class="again" id="installNo">✕</button>
+  </div>
 
 <script>
   // 깐죽 단계별 첫인사 / 헤더 문구
@@ -358,10 +404,12 @@
     const chat = chats.find((c) => c.id === currentId);
     if (!chat) return;
     chat.level = level;
+    chat.study = study;
     chat.messages = slimMessages(messages);
     chat.updatedAt = Date.now();
-    // 방금 쓴 대화를 맨 앞으로
+    // 방금 쓴 대화를 맨 앞으로 (즐겨찾기는 그 위)
     chats = [chat].concat(chats.filter((c) => c.id !== chat.id)).slice(0, MAX_CHATS);
+    sortChats();
     persist();
     if (cloud && user) {
       clearTimeout(syncTimer);
@@ -386,6 +434,7 @@
         const d = parseStore(raw);
         if (d) {
           chats = d.chats;
+          sortChats();
           currentId = chats.some((c) => c.id === d.current) ? d.current : null;
           return;
         }
@@ -409,11 +458,12 @@
   // ---- 서버(Supabase) 읽고 쓰기 ----
   async function cloudLoadChats() {
     const { data, error } = await cloud
-      .from("chats").select("id, level, messages, created_at, updated_at")
+      .from("chats").select("id, level, messages, title, pinned, study, created_at, updated_at")
       .order("updated_at", { ascending: false }).limit(MAX_CHATS);
     if (error) throw error;
     return data.map((r) => ({
       id: r.id, level: r.level, messages: r.messages || [],
+      title: r.title || null, pinned: !!r.pinned, study: !!r.study,
       createdAt: Date.parse(r.created_at), updatedAt: Date.parse(r.updated_at),
     }));
   }
@@ -421,6 +471,7 @@
     if (!cloud || !user) return;
     cloud.from("chats").upsert({
       id: chat.id, user_id: user.id, level: chat.level, messages: chat.messages,
+      title: chat.title || null, pinned: !!chat.pinned, study: !!chat.study,
       created_at: new Date(chat.createdAt).toISOString(), updated_at: new Date(chat.updatedAt).toISOString(),
     }).then(({ error }) => {
       if (error) { console.error("[깐죽이] 서버 저장 실패:", error); toast("서버 저장이 안 됐어 ㅠ"); }
@@ -442,8 +493,29 @@
   });
 
   function chatTitle(chat) {
+    if (chat.title) return chat.title;
     const first = chat.messages.find((m) => m.role === "user" && m.content);
     return first ? first.content : "아직 말 안 건 대화";
+  }
+  // 즐겨찾기 먼저, 그 안에선 최근 순
+  function sortChats() {
+    chats.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+  function touchChat(chat) {
+    persist();
+    cloudUpsert(chat);
+    renderList();
+  }
+  function togglePin(chat) {
+    chat.pinned = !chat.pinned;
+    sortChats();
+    touchChat(chat);
+  }
+  function renameChat(chat) {
+    const t = prompt("대화 제목을 뭐라고 할까?", chatTitle(chat));
+    if (t === null) return;
+    chat.title = t.trim().slice(0, 40) || null;
+    touchChat(chat);
   }
   function chatPreview(chat) {
     const last = chat.messages[chat.messages.length - 1];
@@ -513,11 +585,38 @@
   const whoEl = document.getElementById("who");
   const acctEl = document.getElementById("acct");
 
+  let study = false; // 📚 숙제 모드 (대화마다 따로 기억)
+  const studyEl = document.getElementById("study");
+  const safetyEl = document.getElementById("safety");
+  const searchEl = document.getElementById("search");
+
   function applyLevelLook(n) {
-    statusTextEl.textContent = LEVELS[n].status;
-    headerEl.className = "header lv" + n;
-    lvlBadgeEl.textContent = LEVELS[n].face;
+    statusTextEl.textContent = study ? "📚 숙제 모드 (안 까불어)" : LEVELS[n].status;
+    headerEl.className = "header lv" + n + (study ? " studyOn" : "");
+    lvlBadgeEl.textContent = study ? "📚" : LEVELS[n].face;
+    studyEl.classList.toggle("on", study);
   }
+
+  function toggleStudy() {
+    study = !study;
+    applyLevelLook(level);
+    messages.push({ role: "assistant", content: study
+      ? "오케이, 숙제 모드. 지금부턴 안 까불고 차근차근 알려줄게. 뭐가 어려워?"
+      : "숙제 모드 끝! 다시 까불어도 되지? ㅋㅋ" });
+    save();
+    render();
+    inputEl.focus();
+  }
+  studyEl.addEventListener("click", toggleStudy);
+
+  // 힘들거나 위험한 말이 보이면 안내를 띄우고, 서버에도 알려서 장난을 멈추게 한다
+  const SAFETY_WORDS = ["죽고 싶", "죽고싶", "죽을래", "자살", "자해", "괴롭힘", "괴롭혀", "괴롭히", "왕따", "학폭", "학교폭력",
+    "때렸", "때려", "맞았어", "맞고 있", "협박", "성추행", "성폭력", "몰래 만", "가출"];
+  function looksUnsafe(text) {
+    const t = (text || "").replace(/\s+/g, " ");
+    return SAFETY_WORDS.some((w) => t.indexOf(w) >= 0);
+  }
+  document.getElementById("safetyX").addEventListener("click", () => safetyEl.classList.remove("show"));
 
   // 세 화면(시작/목록/채팅) 중 하나만 보여준다
   function showScreen(which) {
@@ -550,8 +649,10 @@
     messages = [{ role: "assistant", content: user && user.nickname ? user.nickname + "! " + greet : greet }];
     image = null;
     loading = false;
+    study = false;
+    safetyEl.classList.remove("show");
     currentId = newId();
-    chats.unshift({ id: currentId, level: n, createdAt: Date.now(), updatedAt: Date.now(), messages: [] });
+    chats.unshift({ id: currentId, level: n, title: null, pinned: false, study: false, createdAt: Date.now(), updatedAt: Date.now(), messages: [] });
     applyLevelLook(n);
     save();
     showChat();
@@ -566,6 +667,8 @@
     messages = chat.messages.map((m) => ({ role: m.role, content: m.content, error: m.error || false }));
     image = null;
     loading = false;
+    study = !!chat.study;
+    safetyEl.classList.remove("show");
     applyLevelLook(level);
     persist();
     showChat();
@@ -604,31 +707,51 @@
 
   function renderList() {
     listBodyEl.innerHTML = "";
-    if (chats.length === 0) {
+    const q = searchEl.value.trim().toLowerCase();
+    const shown = q
+      ? chats.filter((c) => chatTitle(c).toLowerCase().indexOf(q) >= 0 || c.messages.some((m) => (m.content || "").toLowerCase().indexOf(q) >= 0))
+      : chats;
+    if (shown.length === 0) {
       const e = document.createElement("div");
       e.className = "empty";
-      e.textContent = "아직 대화가 없어.\n위에 '＋ 새 대화' 눌러봐!";
+      e.textContent = q ? "'" + searchEl.value.trim() + "' 들어간 대화가 없네" : "아직 대화가 없어.\n위에 '＋ 새 대화' 눌러봐!";
       e.style.whiteSpace = "pre-line";
       listBodyEl.appendChild(e);
       return;
     }
-    chats.forEach((chat) => {
+    shown.forEach((chat) => {
       const row = document.createElement("div");
       row.className = "chatRow lv" + chat.level;
       row.innerHTML =
         '<span class="chatFace"></span>' +
         '<div class="chatInfo"><div class="chatTitle"></div><div class="chatPrev"></div></div>' +
         '<span class="chatDate"></span>' +
-        '<button class="chatDel" title="지우기">✕</button>';
-      row.querySelector(".chatFace").textContent = LEVELS[chat.level].face;
-      row.querySelector(".chatTitle").textContent = chatTitle(chat);
-      row.querySelector(".chatPrev").textContent = chatPreview(chat);
+        '<div class="chatBtns">' +
+          '<button class="chatPin" title="즐겨찾기">★</button>' +
+          '<button class="chatEdit" title="제목 바꾸기">✎</button>' +
+          '<button class="chatDel" title="지우기">✕</button>' +
+        '</div>';
+      row.querySelector(".chatFace").textContent = chat.study ? "📚" : LEVELS[chat.level].face;
+      row.querySelector(".chatTitle").textContent = (chat.pinned ? "⭐ " : "") + chatTitle(chat);
+      row.querySelector(".chatPrev").textContent = q ? findSnippet(chat, q) : chatPreview(chat);
       row.querySelector(".chatDate").textContent = fmtDate(chat.updatedAt || chat.createdAt);
+      row.querySelector(".chatPin").classList.toggle("on", !!chat.pinned);
+      row.querySelector(".chatPin").addEventListener("click", (e) => { e.stopPropagation(); togglePin(chat); });
+      row.querySelector(".chatEdit").addEventListener("click", (e) => { e.stopPropagation(); renameChat(chat); });
       row.querySelector(".chatDel").addEventListener("click", (e) => { e.stopPropagation(); deleteChat(chat.id); });
       row.addEventListener("click", () => openChat(chat.id));
       listBodyEl.appendChild(row);
     });
   }
+  // 검색어가 들어간 문장 앞뒤를 조금 보여준다
+  function findSnippet(chat, q) {
+    const m = chat.messages.find((x) => (x.content || "").toLowerCase().indexOf(q) >= 0);
+    if (!m) return chatPreview(chat);
+    const i = m.content.toLowerCase().indexOf(q);
+    const s = Math.max(0, i - 12);
+    return (s > 0 ? "…" : "") + m.content.slice(s, i + q.length + 24);
+  }
+  searchEl.addEventListener("input", renderList);
 
   // 단계 고르는 화면 (새 대화 시작)
   function showPick() {
@@ -731,6 +854,7 @@
       loadStore(); // 이 계정의 캐시
       try {
         chats = await cloudLoadChats();
+        sortChats();
         currentId = chats.some((c) => c.id === currentId) ? currentId : null;
       } catch (e) {
         console.error("[깐죽이] 서버에서 대화 불러오기 실패:", e);
@@ -740,7 +864,7 @@
       if (guest && guest.chats.length) {
         const moved = guest.chats.filter((g) => !chats.some((c) => c.id === g.id));
         moved.forEach((g) => { chats.push(g); cloudUpsert(g); });
-        chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        sortChats();
         chats = chats.slice(0, MAX_CHATS);
         try { localStorage.removeItem(STORE_KEY); } catch (e) {}
         if (moved.length) toast("이전 대화 " + moved.length + "개를 계정으로 옮겼어");
@@ -959,9 +1083,17 @@
   attachEl.addEventListener("click", () => fileEl.click());
   previewXEl.addEventListener("click", () => { image = null; renderPreview(); });
 
+  let pendingSafety = false; // 이번 요청에 안전 모드를 같이 보낼지
+
   async function send() {
     const text = inputEl.value.trim();
     if ((!text && !image) || loading) return;
+    if (navigator.onLine === false) { toast("인터넷이 없어 ㅠ 연결하고 다시 해봐"); return; }
+
+    if (looksUnsafe(text)) {
+      pendingSafety = true;
+      safetyEl.classList.add("show");
+    }
 
     messages.push({ role: "user", content: text, image: image });
     inputEl.value = "";
@@ -1008,7 +1140,10 @@
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages, level: level, name: user ? user.nickname : null }),
+        body: JSON.stringify({
+          messages: apiMessages, level: level, name: user ? user.nickname : null,
+          study: study, safety: pendingSafety,
+        }),
       });
 
       // 에러는 JSON으로, 정상 답은 글자 스트림으로 온다
@@ -1044,11 +1179,40 @@
       messages.push({ role: "assistant", error: true, content: "삐빅- 서버까지 못 갔어 (" + (err && err.message ? err.message : err) + ")" });
     } finally {
       loading = false;
+      pendingSafety = false;
       save();
       render();
       resetNudge();
     }
   }
+
+  // ===== 홈 화면에 추가 (PWA) =====
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch((e) => console.warn("[깐죽이] 서비스워커 등록 실패:", e));
+    });
+  }
+  let installEvent = null;
+  const installBarEl = document.getElementById("installBar");
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    installEvent = e;
+    let dismissed = false;
+    try { dismissed = localStorage.getItem("kkanjuki.installNo") === "1"; } catch (x) {}
+    if (!dismissed) installBarEl.classList.add("show");
+  });
+  document.getElementById("installYes").addEventListener("click", async () => {
+    installBarEl.classList.remove("show");
+    if (!installEvent) return;
+    installEvent.prompt();
+    try { await installEvent.userChoice; } catch (e) {}
+    installEvent = null;
+  });
+  document.getElementById("installNo").addEventListener("click", () => {
+    installBarEl.classList.remove("show");
+    try { localStorage.setItem("kkanjuki.installNo", "1"); } catch (e) {}
+  });
+  window.addEventListener("appinstalled", () => { installBarEl.classList.remove("show"); toast("홈 화면에 추가됐어!"); });
 
   sendEl.addEventListener("click", send);
   inputEl.addEventListener("keydown", (e) => {

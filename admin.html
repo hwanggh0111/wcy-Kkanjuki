@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<title>깐죽이 관리자</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gaegu:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    padding: 20px 16px 40px;
+    background: radial-gradient(circle at 30% 20%, #FFEFC2 0%, #FFD9A0 60%, #FFC074 100%);
+    font-family: 'Gaegu', sans-serif; color: #1A1A2E;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: #FFFDF5; border: 3px solid #1A1A2E; border-radius: 22px; box-shadow: 6px 6px 0 #1A1A2E; padding: 18px 20px; }
+  h1 { font-family: 'Jua', sans-serif; font-size: 26px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  h2 { font-family: 'Jua', sans-serif; font-size: 19px; margin: 0 0 10px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .input { border: 2.5px solid #1A1A2E; border-radius: 12px; padding: 8px 12px; font-size: 17px; font-family: 'Gaegu', sans-serif; background: #FFFDF5; outline: none; }
+  .btn { background: #FF7A59; color: #FFFDF5; border: 2.5px solid #1A1A2E; border-radius: 12px; padding: 8px 16px; font-size: 17px; font-family: 'Jua', sans-serif; cursor: pointer; box-shadow: 3px 3px 0 #1A1A2E; }
+  .btn.light { background: #FFE14D; color: #1A1A2E; }
+  .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #1A1A2E; }
+  .btn.on { outline: 3px solid #1A1A2E; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .tile { border: 2.5px solid #1A1A2E; border-radius: 16px; padding: 12px 14px; background: #FFF7C7; }
+  .tile .n { font-family: 'Jua', sans-serif; font-size: 28px; line-height: 1.1; }
+  .tile .l { font-size: 15px; color: #6B6B7B; margin-top: 2px; }
+  .tile.red { background: #FFE0D6; } .tile.green { background: #E9FFE4; } .tile.blue { background: #E4F0FF; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th, td { padding: 6px 8px; text-align: right; border-bottom: 1.5px solid #E8E2D0; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-family: 'Jua', sans-serif; font-weight: normal; color: #6B6B7B; }
+  .bar { display: inline-block; height: 10px; background: #FF7A59; border: 1.5px solid #1A1A2E; border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+  .msg { font-size: 17px; color: #D7263D; white-space: pre-line; }
+  .muted { color: #6B6B7B; font-size: 15px; }
+  .err { font-size: 15px; padding: 6px 0; border-bottom: 1.5px solid #E8E2D0; }
+  .err b { font-family: 'Jua', sans-serif; font-weight: normal; margin-right: 8px; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>🛠 깐죽이 관리자 <span class="muted" id="when"></span></h1>
+    <div class="row" style="margin-top:12px;">
+      <input class="input" id="pw" type="password" placeholder="관리자 비밀번호" style="flex:1; min-width:160px;" />
+      <button class="btn light" data-days="1">오늘</button>
+      <button class="btn light on" data-days="7">7일</button>
+      <button class="btn light" data-days="30">30일</button>
+      <button class="btn" id="go">새로고침</button>
+    </div>
+    <div class="msg" id="msg" style="margin-top:10px;"></div>
+  </div>
+
+  <div id="body" style="display:none;">
+    <div class="card">
+      <h2 id="rangeTitle">최근 7일</h2>
+      <div class="tiles" id="tiles"></div>
+      <div class="muted" id="levels" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>날짜별</h2>
+      <div class="scroll"><table id="table"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>최근 에러</h2>
+      <div id="errors"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const pwEl = document.getElementById("pw");
+  const msgEl = document.getElementById("msg");
+  const bodyEl = document.getElementById("body");
+  let days = 7;
+
+  try { pwEl.value = sessionStorage.getItem("kkanjuki.admin") || ""; } catch (e) {}
+
+  document.querySelectorAll("[data-days]").forEach((b) => b.addEventListener("click", () => {
+    days = Number(b.dataset.days);
+    document.querySelectorAll("[data-days]").forEach((x) => x.classList.toggle("on", x === b));
+    load();
+  }));
+  document.getElementById("go").addEventListener("click", load);
+  pwEl.addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+
+  function n(x) { return (x || 0).toLocaleString("ko-KR"); }
+
+  async function load() {
+    const pw = pwEl.value;
+    if (!pw) { msgEl.textContent = "비밀번호를 적어줘"; return; }
+    msgEl.textContent = "불러오는 중...";
+    bodyEl.style.display = "none";
+    try {
+      const res = await fetch("/api/admin?days=" + days, { headers: { "x-admin-password": pw } });
+      const data = await res.json();
+      if (!res.ok) { msgEl.textContent = data.error || ("HTTP " + res.status); return; }
+      try { sessionStorage.setItem("kkanjuki.admin", pw); } catch (e) {}
+      msgEl.textContent = "";
+      render(data);
+      bodyEl.style.display = "contents";
+    } catch (e) {
+      msgEl.textContent = "서버에 연결이 안 돼: " + e.message;
+    }
+  }
+
+  function render(d) {
+    const t = d.total;
+    document.getElementById("when").textContent = new Date().toLocaleString("ko-KR");
+    document.getElementById("rangeTitle").textContent = d.days === 1 ? "오늘" : "최근 " + d.days + "일";
+    document.getElementById("tiles").innerHTML = [
+      ["요청", t.requests, ""],
+      ["사용자(IP 기준)", t.users, "blue"],
+      ["성공", t.ok, "green"],
+      ["에러", t.errors, t.errors ? "red" : ""],
+      ["로그인 사용", t.loggedIn, ""],
+      ["숙제 모드", t.study, ""],
+      ["안전 안내", t.safety, t.safety ? "red" : ""],
+      ["평균 응답(ms)", t.avgMs, ""],
+      ["입력 토큰", t.inTokens, ""],
+      ["출력 토큰", t.outTokens, ""],
+    ].map(([l, v, c]) => '<div class="tile ' + c + '"><div class="n">' + n(v) + '</div><div class="l">' + l + '</div></div>').join("");
+
+    const lv = d.levels;
+    document.getElementById("levels").textContent =
+      "단계별: 1단계 " + n(lv[1]) + " · 2단계 " + n(lv[2]) + " · 3단계 " + n(lv[3]) + (d.truncated ? " · (기록이 많아 최근 10,000개만 집계)" : "");
+
+    const max = Math.max(1, ...d.byDay.map((x) => x.requests));
+    document.getElementById("table").innerHTML =
+      "<tr><th>날짜</th><th style='text-align:left'>요청</th><th>사용자</th><th>에러</th><th>숙제</th><th>안전</th><th>토큰(입/출)</th></tr>" +
+      d.byDay.map((x) =>
+        "<tr><td>" + x.date + "</td>" +
+        "<td style='text-align:left'><span class='bar' style='width:" + Math.round(120 * x.requests / max) + "px'></span>" + n(x.requests) + "</td>" +
+        "<td>" + n(x.users) + "</td><td>" + n(x.errors) + "</td><td>" + n(x.study) + "</td><td>" + n(x.safety) + "</td>" +
+        "<td>" + n(x.inTokens) + " / " + n(x.outTokens) + "</td></tr>"
+      ).join("");
+
+    const errs = document.getElementById("errors");
+    errs.innerHTML = d.recentErrors.length ? "" : '<div class="muted">에러 없음 👍</div>';
+    d.recentErrors.forEach((e) => {
+      const div = document.createElement("div");
+      div.className = "err";
+      const b = document.createElement("b");
+      b.textContent = new Date(e.ts).toLocaleString("ko-KR") + " · " + (e.status || "");
+      div.appendChild(b);
+      div.appendChild(document.createTextNode(e.error || ""));
+      errs.appendChild(div);
+    });
+  }
+
+  if (pwEl.value) load();
+</script>
+</body>
+</html>

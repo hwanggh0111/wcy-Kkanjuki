@@ -1,7 +1,7 @@
 // 깐죽이 로컬 미리보기 서버
 // - 프로젝트 폴더의 정적 파일(index.html 등)을 그대로 서빙
-// - /api/chat 은 api/chat.js (Vercel 핸들러)를 그대로 불러서 실행
-// 키는 환경변수 GEMINI_API_KEY 또는 프로젝트 루트의 .env 파일에서 읽음
+// - /api/<이름> 은 api/<이름>.js (Vercel 핸들러)를 그대로 불러서 실행
+// 키는 환경변수 또는 프로젝트 루트의 .env 파일에서 읽음
 
 import http from "node:http";
 import fs from "node:fs";
@@ -29,13 +29,21 @@ const TYPES = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
 };
 
-async function handleApi(req, res) {
+async function handleApi(req, res, name, url) {
+  const file = path.join(ROOT, "api", name + ".js");
+  if (!/^[a-z0-9_-]+$/i.test(name) || !fs.existsSync(file)) {
+    res.statusCode = 404;
+    return res.end("No such api: " + name);
+  }
+
   const chunks = [];
   for await (const c of req) chunks.push(c);
   const raw = Buffer.concat(chunks).toString("utf8");
   try { req.body = raw ? JSON.parse(raw) : {}; } catch { req.body = {}; }
+  req.query = Object.fromEntries(url.searchParams);
 
   res.status = (code) => { res.statusCode = code; return res; };
   res.json = (obj) => {
@@ -44,16 +52,20 @@ async function handleApi(req, res) {
     return res;
   };
 
-  // 수정할 때마다 최신 코드를 쓰도록 캐시를 피해서 불러온다
-  const file = path.join(ROOT, "api", "chat.js");
-  const mod = await import(pathToFileURL(file).href + "?t=" + fs.statSync(file).mtimeMs);
+  // 수정할 때마다 최신 코드를 쓰도록 캐시를 피해서 불러온다 (lib/ 도 같이 갱신되게 버전을 합쳐서)
+  const libDir = path.join(ROOT, "lib");
+  const libStamp = fs.existsSync(libDir)
+    ? fs.readdirSync(libDir).map((f) => fs.statSync(path.join(libDir, f)).mtimeMs).join("-")
+    : "";
+  const mod = await import(pathToFileURL(file).href + "?t=" + fs.statSync(file).mtimeMs + "-" + libStamp);
   await mod.default(req, res);
 }
 
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
-    if (url.pathname === "/api/chat") return await handleApi(req, res);
+    const api = url.pathname.match(/^\/api\/([^/]+)$/);
+    if (api) return await handleApi(req, res, api[1], url);
 
     let rel = decodeURIComponent(url.pathname);
     if (rel === "/") rel = "/index.html";
